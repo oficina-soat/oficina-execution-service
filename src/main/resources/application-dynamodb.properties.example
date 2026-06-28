@@ -1,0 +1,7 @@
+quarkus.dynamodb.aws.region=${AWS_REGION:us-east-1}
+quarkus.dynamodb.aws.credentials.type=default
+
+oficina.dynamodb.table-prefix=${OFICINA_DYNAMODB_TABLE_PREFIX:oficina-execution-lab}
+
+%dev.quarkus.dynamodb.endpoint-override=${DYNAMODB_ENDPOINT_OVERRIDE:http://localhost:8000}
+%test.quarkus.dynamodb.endpoint-override=${DYNAMODB_ENDPOINT_OVERRIDE:http://localhost:8000}
