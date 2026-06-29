@@ -14,6 +14,8 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.enums.ParameterIn;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.time.OffsetDateTime;
@@ -30,6 +32,7 @@ public class CatalogoResource {
 
     @POST
     @Path("servicos")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Response criarServico(ServicoRequest request) {
         var servico = toResponse(store.criarServico(request.nome(), request.descricao(), request.valorBase()));
         return Response.created(URI.create("/api/v1/servicos/" + servico.servicoId()))
@@ -59,6 +62,7 @@ public class CatalogoResource {
 
     @POST
     @Path("pecas")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Response criarPeca(PecaRequest request) {
         var peca = toResponse(store.criarPeca(request.nome(), request.codigo(), request.valorUnitario()));
         return Response.created(URI.create("/api/v1/pecas/" + peca.pecaId()))

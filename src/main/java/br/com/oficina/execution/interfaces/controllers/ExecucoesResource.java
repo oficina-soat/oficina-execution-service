@@ -15,6 +15,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.enums.ParameterIn;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -30,6 +32,7 @@ public class ExecucoesResource {
 
     @POST
     @Path("execucoes")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Response criarExecucao(ExecucaoCreateRequest request) {
         var execucao = toResponse(store.criarExecucao(request.ordemServicoId()));
         return Response.created(URI.create("/api/v1/execucoes/" + execucao.execucaoId()))
@@ -60,6 +63,7 @@ public class ExecucoesResource {
     @POST
     @Path("execucoes/{execucaoId}/diagnostico/inicio")
     @Consumes(MediaType.WILDCARD)
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public ExecucaoResponse iniciarDiagnostico(
             @PathParam("execucaoId") UUID execucaoId,
             @HeaderParam("X-Correlation-Id") String correlationId) {
@@ -68,6 +72,7 @@ public class ExecucoesResource {
 
     @POST
     @Path("execucoes/{execucaoId}/diagnostico/conclusao")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public ExecucaoResponse concluirDiagnostico(
             @PathParam("execucaoId") UUID execucaoId,
             ConclusaoDiagnosticoRequest request,
@@ -78,6 +83,7 @@ public class ExecucoesResource {
     @POST
     @Path("execucoes/{execucaoId}/reparo/inicio")
     @Consumes(MediaType.WILDCARD)
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public ExecucaoResponse iniciarReparo(
             @PathParam("execucaoId") UUID execucaoId,
             @HeaderParam("X-Correlation-Id") String correlationId) {
@@ -86,6 +92,7 @@ public class ExecucoesResource {
 
     @POST
     @Path("execucoes/{execucaoId}/reparo/conclusao")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public ExecucaoResponse concluirReparo(
             @PathParam("execucaoId") UUID execucaoId,
             ConclusaoReparoRequest request,
@@ -95,6 +102,7 @@ public class ExecucoesResource {
 
     @POST
     @Path("execucoes/{execucaoId}/cancelamento")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public ExecucaoResponse cancelarExecucao(
             @PathParam("execucaoId") UUID execucaoId,
             CancelamentoRequest request) {

@@ -16,6 +16,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.openapi.annotations.enums.ParameterIn;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -47,24 +49,28 @@ public class EstoqueResource {
 
     @POST
     @Path("movimentos/entrada")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Response registrarEntrada(MovimentoEstoqueRequest request, @HeaderParam("X-Correlation-Id") String correlationId) {
         return criarMovimento(TipoMovimentoEstoque.ENTRADA, request, correlationId);
     }
 
     @POST
     @Path("movimentos/reserva")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Response reservar(MovimentoEstoqueRequest request, @HeaderParam("X-Correlation-Id") String correlationId) {
         return criarMovimento(TipoMovimentoEstoque.RESERVA, request, correlationId);
     }
 
     @POST
     @Path("movimentos/consumo")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Response consumir(MovimentoEstoqueRequest request, @HeaderParam("X-Correlation-Id") String correlationId) {
         return criarMovimento(TipoMovimentoEstoque.CONSUMO, request, correlationId);
     }
 
     @POST
     @Path("movimentos/estorno")
+    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Response estornar(MovimentoEstoqueRequest request, @HeaderParam("X-Correlation-Id") String correlationId) {
         return criarMovimento(TipoMovimentoEstoque.ESTORNO, request, correlationId);
     }
