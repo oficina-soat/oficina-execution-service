@@ -6,7 +6,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.notNullValue;
 
-import br.com.oficina.execution.framework.db.ExecutionSeedStore;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
 import io.quarkus.test.junit.QuarkusTest;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -17,10 +17,10 @@ class ExecutionCatalogoEstoqueResourceTest {
     void deveConsultarSeedsDeCatalogoESaldo() {
         given()
                 .when()
-                .get("/api/v1/servicos/{servicoId}", ExecutionSeedStore.SEED_SERVICO_ID)
+                .get("/api/v1/servicos/{servicoId}", DynamoDbExecutionStore.SEED_SERVICO_ID)
                 .then()
                 .statusCode(200)
-                .body("servicoId", equalTo(ExecutionSeedStore.SEED_SERVICO_ID.toString()))
+                .body("servicoId", equalTo(DynamoDbExecutionStore.SEED_SERVICO_ID.toString()))
                 .body("nome", equalTo("Troca de oleo"))
                 .body("descricao", equalTo("Substituicao do oleo do motor"))
                 .body("valorBase", equalTo(250.00f))
@@ -30,10 +30,10 @@ class ExecutionCatalogoEstoqueResourceTest {
 
         given()
                 .when()
-                .get("/api/v1/pecas/{pecaId}", ExecutionSeedStore.SEED_PECA_ID)
+                .get("/api/v1/pecas/{pecaId}", DynamoDbExecutionStore.SEED_PECA_ID)
                 .then()
                 .statusCode(200)
-                .body("pecaId", equalTo(ExecutionSeedStore.SEED_PECA_ID.toString()))
+                .body("pecaId", equalTo(DynamoDbExecutionStore.SEED_PECA_ID.toString()))
                 .body("nome", equalTo("Volante"))
                 .body("codigo", equalTo("VOL-001"))
                 .body("valorUnitario", equalTo(50.00f))
@@ -41,10 +41,10 @@ class ExecutionCatalogoEstoqueResourceTest {
 
         given()
                 .when()
-                .get("/api/v1/estoques/pecas/{pecaId}/saldo", ExecutionSeedStore.SEED_PECA_ID)
+                .get("/api/v1/estoques/pecas/{pecaId}/saldo", DynamoDbExecutionStore.SEED_PECA_ID)
                 .then()
                 .statusCode(200)
-                .body("pecaId", equalTo(ExecutionSeedStore.SEED_PECA_ID.toString()))
+                .body("pecaId", equalTo(DynamoDbExecutionStore.SEED_PECA_ID.toString()))
                 .body("quantidadeDisponivel", equalTo(10))
                 .body("quantidadeReservada", equalTo(0))
                 .body("atualizadoEm", notNullValue());
@@ -175,13 +175,13 @@ class ExecutionCatalogoEstoqueResourceTest {
                           "quantidade": 2,
                           "motivo": "Reserva para OS"
                         }
-                        """.formatted(pecaId, ExecutionSeedStore.SEED_ORDEM_SERVICO_ID))
+                        """.formatted(pecaId, DynamoDbExecutionStore.SEED_ORDEM_SERVICO_ID))
                 .when()
                 .post("/api/v1/estoques/movimentos/reserva")
                 .then()
                 .statusCode(201)
                 .body("pecaId", equalTo(pecaId))
-                .body("ordemServicoId", equalTo(ExecutionSeedStore.SEED_ORDEM_SERVICO_ID.toString()))
+                .body("ordemServicoId", equalTo(DynamoDbExecutionStore.SEED_ORDEM_SERVICO_ID.toString()))
                 .body("tipo", equalTo("RESERVA"))
                 .body("quantidade", equalTo(2));
 
@@ -195,7 +195,7 @@ class ExecutionCatalogoEstoqueResourceTest {
                           "quantidade": 1,
                           "motivo": "Consumo no reparo"
                         }
-                        """.formatted(pecaId, ExecutionSeedStore.SEED_ORDEM_SERVICO_ID))
+                        """.formatted(pecaId, DynamoDbExecutionStore.SEED_ORDEM_SERVICO_ID))
                 .when()
                 .post("/api/v1/estoques/movimentos/consumo")
                 .then()
@@ -213,7 +213,7 @@ class ExecutionCatalogoEstoqueResourceTest {
                           "quantidade": 1,
                           "motivo": "Estorno de reserva"
                         }
-                        """.formatted(pecaId, ExecutionSeedStore.SEED_ORDEM_SERVICO_ID))
+                        """.formatted(pecaId, DynamoDbExecutionStore.SEED_ORDEM_SERVICO_ID))
                 .when()
                 .post("/api/v1/estoques/movimentos/estorno")
                 .then()
@@ -242,7 +242,7 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .body("[3].tipo", equalTo("ESTORNO"));
 
         given()
-                .queryParam("ordemServicoId", ExecutionSeedStore.SEED_ORDEM_SERVICO_ID)
+                .queryParam("ordemServicoId", DynamoDbExecutionStore.SEED_ORDEM_SERVICO_ID)
                 .when()
                 .get("/api/v1/estoques/movimentos")
                 .then()
@@ -318,7 +318,7 @@ class ExecutionCatalogoEstoqueResourceTest {
                           "quantidade": 999,
                           "motivo": "Reserva maior que saldo"
                         }
-                        """.formatted(ExecutionSeedStore.SEED_PECA_ID, ExecutionSeedStore.SEED_ORDEM_SERVICO_ID))
+                        """.formatted(DynamoDbExecutionStore.SEED_PECA_ID, DynamoDbExecutionStore.SEED_ORDEM_SERVICO_ID))
                 .when()
                 .post("/api/v1/estoques/movimentos/reserva")
                 .then()

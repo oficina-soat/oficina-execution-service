@@ -2,7 +2,7 @@ package br.com.oficina.execution.interfaces.controllers;
 
 import br.com.oficina.execution.core.entities.catalogo.Peca;
 import br.com.oficina.execution.core.entities.catalogo.Servico;
-import br.com.oficina.execution.framework.db.ExecutionSeedStore;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -26,7 +26,7 @@ import java.util.UUID;
 @PermitAll
 public class CatalogoResource {
     @Inject
-    ExecutionSeedStore store;
+    DynamoDbExecutionStore store;
 
     @POST
     @Path("servicos")

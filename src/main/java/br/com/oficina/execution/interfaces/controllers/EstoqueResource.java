@@ -3,7 +3,7 @@ package br.com.oficina.execution.interfaces.controllers;
 import br.com.oficina.execution.core.entities.estoque.Estoque;
 import br.com.oficina.execution.core.entities.estoque.MovimentoEstoque;
 import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
-import br.com.oficina.execution.framework.db.ExecutionSeedStore;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -26,7 +26,7 @@ import java.util.UUID;
 @PermitAll
 public class EstoqueResource {
     @Inject
-    ExecutionSeedStore store;
+    DynamoDbExecutionStore store;
 
     @GET
     @Path("pecas/{pecaId}/saldo")

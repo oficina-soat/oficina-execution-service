@@ -1,0 +1,361 @@
+package br.com.oficina.execution.framework.dynamodb;
+
+import br.com.oficina.execution.core.entities.catalogo.Peca;
+import br.com.oficina.execution.core.entities.catalogo.Servico;
+import br.com.oficina.execution.core.entities.estoque.Estoque;
+import br.com.oficina.execution.core.entities.estoque.MovimentoEstoque;
+import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
+import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
+import br.com.oficina.execution.framework.dynamodb.OutboxEventRecord.OutboxStatus;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@ApplicationScoped
+public class DynamoDbExecutionStore {
+    public static final UUID SEED_PECA_ID = UUID.fromString("19fdd9ab-cf1f-4074-a96b-80ae86fba7b0");
+    public static final UUID SEED_SERVICO_ID = UUID.fromString("b96e7e7f-b1f7-4c55-b42a-61c53ab06caa");
+    public static final UUID SEED_ORDEM_SERVICO_ID = UUID.fromString("d290f1ee-6c54-4b01-90e6-d701748f0851");
+
+    private final DynamoDbTableNames tableNames;
+    private final LinkedHashMap<UUID, Peca> pecas = new LinkedHashMap<>();
+    private final LinkedHashMap<String, UUID> pecaIdsPorCodigo = new LinkedHashMap<>();
+    private final LinkedHashMap<UUID, Servico> servicos = new LinkedHashMap<>();
+    private final LinkedHashMap<UUID, Estoque> saldos = new LinkedHashMap<>();
+    private final List<MovimentoEstoque> movimentos = new ArrayList<>();
+    private final LinkedHashMap<String, DynamoDbItem> catalogoItems = new LinkedHashMap<>();
+    private final LinkedHashMap<String, DynamoDbItem> estoqueItems = new LinkedHashMap<>();
+    private final LinkedHashMap<String, DynamoDbItem> execucaoItems = new LinkedHashMap<>();
+    private final LinkedHashMap<String, DynamoDbItem> outboxItems = new LinkedHashMap<>();
+    private final LinkedHashMap<String, DynamoDbItem> idempotenciaItems = new LinkedHashMap<>();
+    private final LinkedHashMap<UUID, OutboxEventRecord> outbox = new LinkedHashMap<>();
+    private final LinkedHashMap<String, IdempotencyRecord> idempotencias = new LinkedHashMap<>();
+
+    public DynamoDbExecutionStore(DynamoDbTableNames tableNames) {
+        this.tableNames = tableNames;
+        var seedTime = OffsetDateTime.of(2026, 6, 23, 15, 30, 0, 0, ZoneOffset.UTC);
+        salvarPeca(new Peca(SEED_PECA_ID, "Volante", "VOL-001", new BigDecimal("50.00"), seedTime));
+        salvarServico(new Servico(SEED_SERVICO_ID, "Troca de oleo", "Substituicao do oleo do motor", new BigDecimal("250.00"), seedTime));
+        salvarSaldo(new Estoque(SEED_PECA_ID, 10, 0, seedTime));
+    }
+
+    public synchronized Servico criarServico(String nome, String descricao, BigDecimal valorBase) {
+        var agora = agora();
+        var servico = new Servico(UUID.randomUUID(), nome, descricao, valorBase, agora);
+        salvarServico(servico);
+        return servico;
+    }
+
+    public synchronized List<Servico> listarServicos() {
+        return servicos.values().stream()
+                .sorted(Comparator.comparing(Servico::criadoEm))
+                .toList();
+    }
+
+    public synchronized Servico buscarServico(UUID servicoId) {
+        var servico = servicos.get(servicoId);
+        if (servico == null) {
+            throw new NotFoundException("Servico nao encontrado: " + servicoId);
+        }
+        return servico;
+    }
+
+    public synchronized Servico atualizarServico(UUID servicoId, String nome, String descricao, BigDecimal valorBase) {
+        var servico = buscarServico(servicoId);
+        servico.atualizar(nome, descricao, valorBase, agora());
+        salvarServico(servico);
+        return servico;
+    }
+
+    public synchronized Peca criarPeca(String nome, String codigo, BigDecimal valorUnitario) {
+        var agora = agora();
+        var codigoNormalizado = normalizarCodigo(codigo);
+        exigirCodigoDisponivel(codigoNormalizado, null);
+        var peca = new Peca(UUID.randomUUID(), nome, codigoNormalizado, valorUnitario, agora);
+        salvarPeca(peca);
+        salvarSaldo(new Estoque(peca.pecaId(), 0, 0, agora));
+        return peca;
+    }
+
+    public synchronized List<Peca> listarPecas() {
+        return pecas.values().stream()
+                .sorted(Comparator.comparing(Peca::criadoEm))
+                .toList();
+    }
+
+    public synchronized Peca buscarPeca(UUID pecaId) {
+        var peca = pecas.get(pecaId);
+        if (peca == null) {
+            throw new NotFoundException("Peca nao encontrada: " + pecaId);
+        }
+        return peca;
+    }
+
+    public synchronized Peca atualizarPeca(UUID pecaId, String nome, String codigo, BigDecimal valorUnitario) {
+        var peca = buscarPeca(pecaId);
+        var codigoNormalizado = normalizarCodigo(codigo);
+        exigirCodigoDisponivel(codigoNormalizado, pecaId);
+        pecaIdsPorCodigo.remove(peca.codigo());
+        peca.atualizar(nome, codigoNormalizado, valorUnitario, agora());
+        salvarPeca(peca);
+        return peca;
+    }
+
+    public synchronized Estoque buscarSaldo(UUID pecaId) {
+        buscarPeca(pecaId);
+        return saldos.computeIfAbsent(pecaId, id -> {
+            var saldo = new Estoque(id, 0, 0, agora());
+            salvarSaldo(saldo);
+            return saldo;
+        });
+    }
+
+    public synchronized List<MovimentoEstoque> listarMovimentos(UUID pecaId, UUID ordemServicoId) {
+        return movimentos.stream()
+                .filter(movimento -> pecaId == null || movimento.pecaId().equals(pecaId))
+                .filter(movimento -> ordemServicoId == null || ordemServicoId.equals(movimento.ordemServicoId()))
+                .sorted(Comparator.comparing(MovimentoEstoque::criadoEm))
+                .toList();
+    }
+
+    public synchronized MovimentoEstoque registrarMovimento(TipoMovimentoEstoque tipo, UUID pecaId, UUID ordemServicoId, int quantidade, String motivo) {
+        var saldo = buscarSaldo(pecaId);
+        var movimento = saldo.registrar(tipo, quantidade, ordemServicoId, motivo, agora());
+        movimentos.add(movimento);
+        salvarSaldo(saldo);
+        salvarMovimento(movimento);
+        return movimento;
+    }
+
+    public synchronized OutboxEventRecord registrarOutbox(
+            String eventType,
+            String topic,
+            String aggregateId,
+            Map<String, Object> payload,
+            String correlationId) {
+        var agora = agora();
+        var event = new OutboxEventRecord(
+                UUID.randomUUID(),
+                eventType,
+                "1.0",
+                topic,
+                "oficina-execution-service",
+                aggregateId,
+                payload,
+                OutboxStatus.PENDING,
+                0,
+                agora,
+                null,
+                null,
+                correlationId,
+                agora,
+                agora);
+        outbox.put(event.eventId(), event);
+        put(outboxItems, toItem(event));
+        return event;
+    }
+
+    public synchronized IdempotencyRecord registrarIdempotencia(
+            String scope,
+            String key,
+            String requestHash,
+            Integer responseStatus,
+            String responseBody,
+            ProcessingStatus status) {
+        var agora = agora();
+        var record = new IdempotencyRecord(scope, key, requestHash, responseStatus, responseBody, status, agora, agora, agora.plusDays(1));
+        idempotencias.put(scope + "#" + key, record);
+        put(idempotenciaItems, toItem(record));
+        return record;
+    }
+
+    public synchronized List<DynamoDbItem> catalogoItems() {
+        return List.copyOf(catalogoItems.values());
+    }
+
+    public synchronized List<DynamoDbItem> estoqueItems() {
+        return List.copyOf(estoqueItems.values());
+    }
+
+    public synchronized List<DynamoDbItem> execucaoItems() {
+        return List.copyOf(execucaoItems.values());
+    }
+
+    public synchronized List<DynamoDbItem> outboxItems() {
+        return List.copyOf(outboxItems.values());
+    }
+
+    public synchronized List<DynamoDbItem> idempotenciaItems() {
+        return List.copyOf(idempotenciaItems.values());
+    }
+
+    public synchronized List<OutboxEventRecord> outboxEvents() {
+        return List.copyOf(outbox.values());
+    }
+
+    private void salvarServico(Servico servico) {
+        servicos.put(servico.servicoId(), servico);
+        put(catalogoItems, toItem(servico));
+    }
+
+    private void salvarPeca(Peca peca) {
+        pecas.put(peca.pecaId(), peca);
+        pecaIdsPorCodigo.put(peca.codigo(), peca.pecaId());
+        put(catalogoItems, toItem(peca));
+    }
+
+    private void salvarSaldo(Estoque saldo) {
+        saldos.put(saldo.pecaId(), saldo);
+        put(estoqueItems, toItem(saldo));
+    }
+
+    private void salvarMovimento(MovimentoEstoque movimento) {
+        put(estoqueItems, toItem(movimento));
+    }
+
+    private DynamoDbItem toItem(Servico servico) {
+        return new DynamoDbItem(
+                tableNames.catalogo(),
+                "SERVICO#" + servico.servicoId(),
+                "METADATA",
+                "SERVICO",
+                attributes(
+                        "servicoId", servico.servicoId(),
+                        "nome", servico.nome(),
+                        "nomeNormalizado", servico.nome().toUpperCase(),
+                        "descricao", servico.descricao(),
+                        "valorBase", servico.valorBase(),
+                        "ativo", servico.ativo(),
+                        "createdAt", servico.criadoEm(),
+                        "updatedAt", servico.atualizadoEm()));
+    }
+
+    private DynamoDbItem toItem(Peca peca) {
+        return new DynamoDbItem(
+                tableNames.catalogo(),
+                "PECA#" + peca.pecaId(),
+                "METADATA",
+                "PECA",
+                attributes(
+                        "pecaId", peca.pecaId(),
+                        "nome", peca.nome(),
+                        "nomeNormalizado", peca.nome().toUpperCase(),
+                        "codigo", peca.codigo(),
+                        "valorUnitario", peca.valorUnitario(),
+                        "ativo", peca.ativo(),
+                        "createdAt", peca.criadoEm(),
+                        "updatedAt", peca.atualizadoEm()));
+    }
+
+    private DynamoDbItem toItem(Estoque saldo) {
+        return new DynamoDbItem(
+                tableNames.estoque(),
+                "PECA#" + saldo.pecaId(),
+                "SALDO",
+                "ESTOQUE_SALDO",
+                attributes(
+                        "pecaId", saldo.pecaId(),
+                        "quantidadeDisponivel", saldo.quantidadeDisponivel(),
+                        "quantidadeReservada", saldo.quantidadeReservada(),
+                        "updatedAt", saldo.atualizadoEm()));
+    }
+
+    private DynamoDbItem toItem(MovimentoEstoque movimento) {
+        return new DynamoDbItem(
+                tableNames.estoque(),
+                "PECA#" + movimento.pecaId(),
+                "MOVIMENTO#" + movimento.criadoEm() + "#" + movimento.movimentoId(),
+                "ESTOQUE_MOVIMENTO",
+                attributes(
+                        "movimentoId", movimento.movimentoId(),
+                        "pecaId", movimento.pecaId(),
+                        "ordemServicoId", movimento.ordemServicoId(),
+                        "tipo", movimento.tipo(),
+                        "quantidade", movimento.quantidade(),
+                        "motivo", movimento.motivo(),
+                        "createdAt", movimento.criadoEm()));
+    }
+
+    private DynamoDbItem toItem(OutboxEventRecord event) {
+        return new DynamoDbItem(
+                tableNames.outbox(),
+                "OUTBOX#" + event.eventId(),
+                "EVENT",
+                "OUTBOX_EVENT",
+                attributes(
+                        "eventId", event.eventId(),
+                        "eventType", event.eventType(),
+                        "eventVersion", event.eventVersion(),
+                        "topic", event.topic(),
+                        "producer", event.producer(),
+                        "aggregateId", event.aggregateId(),
+                        "payload", event.payload(),
+                        "status", event.status(),
+                        "attempts", event.attempts(),
+                        "nextAttemptAt", event.nextAttemptAt(),
+                        "correlationId", event.correlationId(),
+                        "createdAt", event.createdAt(),
+                        "updatedAt", event.updatedAt()));
+    }
+
+    private DynamoDbItem toItem(IdempotencyRecord record) {
+        return new DynamoDbItem(
+                tableNames.idempotencia(),
+                "IDEMPOTENCY#" + record.scope() + "#" + record.key(),
+                "REQUEST",
+                "IDEMPOTENCY",
+                attributes(
+                        "scope", record.scope(),
+                        "key", record.key(),
+                        "requestHash", record.requestHash(),
+                        "responseStatus", record.responseStatus(),
+                        "responseBody", record.responseBody(),
+                        "processingStatus", record.processingStatus(),
+                        "createdAt", record.createdAt(),
+                        "updatedAt", record.updatedAt(),
+                        "expiresAt", record.expiresAt()));
+    }
+
+    private Map<String, Object> attributes(Object... entries) {
+        var attributes = new LinkedHashMap<String, Object>();
+        for (var i = 0; i < entries.length; i += 2) {
+            var value = entries[i + 1];
+            if (value != null) {
+                attributes.put((String) entries[i], value);
+            }
+        }
+        return attributes;
+    }
+
+    private void put(LinkedHashMap<String, DynamoDbItem> items, DynamoDbItem item) {
+        items.put(item.key(), item);
+    }
+
+    private void exigirCodigoDisponivel(String codigo, UUID pecaAtualId) {
+        var pecaIdExistente = pecaIdsPorCodigo.get(codigo);
+        if (pecaIdExistente != null && !pecaIdExistente.equals(pecaAtualId)) {
+            throw new WebApplicationException("Codigo de peca ja cadastrado: " + codigo, Response.Status.CONFLICT);
+        }
+    }
+
+    private String normalizarCodigo(String codigo) {
+        if (codigo == null || codigo.isBlank()) {
+            throw new IllegalArgumentException("Codigo da peca e obrigatorio.");
+        }
+        return codigo.trim().toUpperCase();
+    }
+
+    private OffsetDateTime agora() {
+        return OffsetDateTime.now(ZoneOffset.UTC);
+    }
+}
