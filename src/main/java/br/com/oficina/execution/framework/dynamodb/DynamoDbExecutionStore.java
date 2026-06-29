@@ -26,6 +26,8 @@ import java.util.UUID;
 @ApplicationScoped
 public class DynamoDbExecutionStore {
     public static final UUID SEED_PECA_ID = UUID.fromString("19fdd9ab-cf1f-4074-a96b-80ae86fba7b0");
+    public static final UUID SEED_PNEU_ID = UUID.fromString("9fc69d25-1ed0-40dd-a02f-4c37e41f0bd6");
+    public static final UUID SEED_TAPETE_ID = UUID.fromString("e522d846-12fb-4c42-8a68-914f4cb5a044");
     public static final UUID SEED_SERVICO_ID = UUID.fromString("b96e7e7f-b1f7-4c55-b42a-61c53ab06caa");
     public static final UUID SEED_ORDEM_SERVICO_ID = UUID.fromString("d290f1ee-6c54-4b01-90e6-d701748f0851");
 
@@ -47,10 +49,19 @@ public class DynamoDbExecutionStore {
 
     public DynamoDbExecutionStore(DynamoDbTableNames tableNames) {
         this.tableNames = tableNames;
-        var seedTime = OffsetDateTime.of(2026, 6, 23, 15, 30, 0, 0, ZoneOffset.UTC);
-        salvarPeca(new Peca(SEED_PECA_ID, "Volante", "VOL-001", new BigDecimal("50.00"), seedTime));
-        salvarServico(new Servico(SEED_SERVICO_ID, "Troca de oleo", "Substituicao do oleo do motor", new BigDecimal("250.00"), seedTime));
-        salvarSaldo(new Estoque(SEED_PECA_ID, 10, 0, seedTime));
+        aplicarSeedLimpo();
+    }
+
+    public synchronized void aplicarSeedLimpo() {
+        for (var peca : ExecutionDynamoDbSeedData.pecas()) {
+            salvarPeca(new Peca(peca.pecaId(), peca.nome(), peca.codigo(), peca.valorUnitario(), ExecutionDynamoDbSeedData.SEED_TIME));
+        }
+        for (var servico : ExecutionDynamoDbSeedData.servicos()) {
+            salvarServico(new Servico(servico.servicoId(), servico.nome(), servico.descricao(), servico.valorBase(), ExecutionDynamoDbSeedData.SEED_TIME));
+        }
+        for (var saldo : ExecutionDynamoDbSeedData.saldos()) {
+            salvarSaldo(new Estoque(saldo.pecaId(), saldo.quantidadeDisponivel(), saldo.quantidadeReservada(), ExecutionDynamoDbSeedData.SEED_TIME));
+        }
     }
 
     public synchronized Servico criarServico(String nome, String descricao, BigDecimal valorBase) {

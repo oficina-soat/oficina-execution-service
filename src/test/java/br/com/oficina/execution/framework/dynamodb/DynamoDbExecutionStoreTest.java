@@ -29,7 +29,24 @@ class DynamoDbExecutionStoreTest {
                 item.tableName().equals("oficina-execution-lab-estoque")
                         && item.pk().equals("PECA#" + DynamoDbExecutionStore.SEED_PECA_ID)
                         && item.sk().equals("SALDO")
-                        && item.attributes().get("quantidadeDisponivel").equals(10)));
+                        && item.attributes().get("quantidadeDisponivel").equals(50)));
+    }
+
+    @Test
+    void deveAplicarSeedLimpoIdempotenteSemEventosOuExecucoes() {
+        store.aplicarSeedLimpo();
+        store.aplicarSeedLimpo();
+
+        assertEquals(3, store.listarPecas().size());
+        assertEquals(1, store.listarServicos().size());
+        assertEquals(0, store.outboxItems().size());
+        assertEquals(0, store.execucaoItems().size());
+        assertTrue(store.catalogoItems().stream().anyMatch(item ->
+                item.pk().equals("PECA#" + DynamoDbExecutionStore.SEED_PNEU_ID)
+                        && item.attributes().get("nome").equals("Pneu")));
+        assertTrue(store.catalogoItems().stream().anyMatch(item ->
+                item.pk().equals("PECA#" + DynamoDbExecutionStore.SEED_TAPETE_ID)
+                        && item.attributes().get("nome").equals("Tapete")));
     }
 
     @Test

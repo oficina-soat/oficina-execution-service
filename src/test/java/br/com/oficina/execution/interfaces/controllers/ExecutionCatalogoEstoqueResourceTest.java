@@ -22,8 +22,8 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .statusCode(200)
                 .body("servicoId", equalTo(DynamoDbExecutionStore.SEED_SERVICO_ID.toString()))
                 .body("nome", equalTo("Troca de oleo"))
-                .body("descricao", equalTo("Substituicao do oleo do motor"))
-                .body("valorBase", equalTo(250.00f))
+                .body("descricao", equalTo("Servico reaproveitado do import.sql do oficina-app"))
+                .body("valorBase", equalTo(150.00f))
                 .body("ativo", equalTo(true))
                 .body("criadoEm", notNullValue())
                 .body("atualizadoEm", notNullValue());
@@ -45,7 +45,7 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .then()
                 .statusCode(200)
                 .body("pecaId", equalTo(DynamoDbExecutionStore.SEED_PECA_ID.toString()))
-                .body("quantidadeDisponivel", equalTo(10))
+                .body("quantidadeDisponivel", equalTo(50))
                 .body("quantidadeReservada", equalTo(0))
                 .body("atualizadoEm", notNullValue());
     }
