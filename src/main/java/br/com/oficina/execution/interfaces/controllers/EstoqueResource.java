@@ -8,6 +8,7 @@ import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -46,35 +47,39 @@ public class EstoqueResource {
 
     @POST
     @Path("movimentos/entrada")
-    public Response registrarEntrada(MovimentoEstoqueRequest request) {
-        return criarMovimento(TipoMovimentoEstoque.ENTRADA, request);
+    public Response registrarEntrada(MovimentoEstoqueRequest request, @HeaderParam("X-Correlation-Id") String correlationId) {
+        return criarMovimento(TipoMovimentoEstoque.ENTRADA, request, correlationId);
     }
 
     @POST
     @Path("movimentos/reserva")
-    public Response reservar(MovimentoEstoqueRequest request) {
-        return criarMovimento(TipoMovimentoEstoque.RESERVA, request);
+    public Response reservar(MovimentoEstoqueRequest request, @HeaderParam("X-Correlation-Id") String correlationId) {
+        return criarMovimento(TipoMovimentoEstoque.RESERVA, request, correlationId);
     }
 
     @POST
     @Path("movimentos/consumo")
-    public Response consumir(MovimentoEstoqueRequest request) {
-        return criarMovimento(TipoMovimentoEstoque.CONSUMO, request);
+    public Response consumir(MovimentoEstoqueRequest request, @HeaderParam("X-Correlation-Id") String correlationId) {
+        return criarMovimento(TipoMovimentoEstoque.CONSUMO, request, correlationId);
     }
 
     @POST
     @Path("movimentos/estorno")
-    public Response estornar(MovimentoEstoqueRequest request) {
-        return criarMovimento(TipoMovimentoEstoque.ESTORNO, request);
+    public Response estornar(MovimentoEstoqueRequest request, @HeaderParam("X-Correlation-Id") String correlationId) {
+        return criarMovimento(TipoMovimentoEstoque.ESTORNO, request, correlationId);
     }
 
-    private Response criarMovimento(TipoMovimentoEstoque tipo, MovimentoEstoqueRequest request) {
+    private Response criarMovimento(
+            TipoMovimentoEstoque tipo,
+            MovimentoEstoqueRequest request,
+            String correlationId) {
         var movimento = toResponse(store.registrarMovimento(
                 tipo,
                 request.pecaId(),
                 request.ordemServicoId(),
                 request.quantidade(),
-                request.motivo()));
+                request.motivo(),
+                correlationId));
         return Response.created(URI.create("/api/v1/estoques/movimentos/" + movimento.movimentoId()))
                 .entity(movimento)
                 .build();

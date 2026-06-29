@@ -5,6 +5,8 @@ import br.com.oficina.execution.core.entities.catalogo.Servico;
 import br.com.oficina.execution.core.entities.estoque.Estoque;
 import br.com.oficina.execution.core.entities.estoque.MovimentoEstoque;
 import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
+import br.com.oficina.execution.core.entities.execucao.Execucao;
+import br.com.oficina.execution.core.entities.execucao.StatusExecucao;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import br.com.oficina.execution.framework.dynamodb.OutboxEventRecord.OutboxStatus;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -32,6 +34,8 @@ public class DynamoDbExecutionStore {
     private final LinkedHashMap<String, UUID> pecaIdsPorCodigo = new LinkedHashMap<>();
     private final LinkedHashMap<UUID, Servico> servicos = new LinkedHashMap<>();
     private final LinkedHashMap<UUID, Estoque> saldos = new LinkedHashMap<>();
+    private final LinkedHashMap<UUID, Execucao> execucoes = new LinkedHashMap<>();
+    private final LinkedHashMap<UUID, UUID> execucaoIdPorOrdemServico = new LinkedHashMap<>();
     private final List<MovimentoEstoque> movimentos = new ArrayList<>();
     private final LinkedHashMap<String, DynamoDbItem> catalogoItems = new LinkedHashMap<>();
     private final LinkedHashMap<String, DynamoDbItem> estoqueItems = new LinkedHashMap<>();
@@ -129,12 +133,106 @@ public class DynamoDbExecutionStore {
     }
 
     public synchronized MovimentoEstoque registrarMovimento(TipoMovimentoEstoque tipo, UUID pecaId, UUID ordemServicoId, int quantidade, String motivo) {
+        return registrarMovimento(tipo, pecaId, ordemServicoId, quantidade, motivo, "local");
+    }
+
+    public synchronized MovimentoEstoque registrarMovimento(
+            TipoMovimentoEstoque tipo,
+            UUID pecaId,
+            UUID ordemServicoId,
+            int quantidade,
+            String motivo,
+            String correlationId) {
         var saldo = buscarSaldo(pecaId);
         var movimento = saldo.registrar(tipo, quantidade, ordemServicoId, motivo, agora());
         movimentos.add(movimento);
         salvarSaldo(saldo);
         salvarMovimento(movimento);
+        registrarOutboxEstoque(movimento, correlationId);
         return movimento;
+    }
+
+    public synchronized Execucao criarExecucao(UUID ordemServicoId) {
+        if (ordemServicoId == null) {
+            throw new IllegalArgumentException("ordemServicoId e obrigatorio.");
+        }
+        if (execucaoIdPorOrdemServico.containsKey(ordemServicoId)) {
+            throw new WebApplicationException("Ja existe execucao para a ordem de servico: " + ordemServicoId, Response.Status.CONFLICT);
+        }
+        var agora = agora();
+        var execucao = new Execucao(UUID.randomUUID(), ordemServicoId, agora);
+        salvarExecucao(execucao);
+        salvarHistorico(execucao, null, StatusExecucao.CRIADA, "Execucao criada", null, agora);
+        return execucao;
+    }
+
+    public synchronized Execucao criarExecucaoSeAusente(UUID ordemServicoId) {
+        var execucaoId = execucaoIdPorOrdemServico.get(ordemServicoId);
+        return execucaoId == null ? criarExecucao(ordemServicoId) : buscarExecucao(execucaoId);
+    }
+
+    public synchronized List<Execucao> listarExecucoes(StatusExecucao status) {
+        return execucoes.values().stream()
+                .filter(execucao -> status == null || execucao.status() == status)
+                .sorted(Comparator.comparing(Execucao::criadoEm))
+                .toList();
+    }
+
+    public synchronized Execucao buscarExecucao(UUID execucaoId) {
+        var execucao = execucoes.get(execucaoId);
+        if (execucao == null) {
+            throw new NotFoundException("Execucao nao encontrada: " + execucaoId);
+        }
+        return execucao;
+    }
+
+    public synchronized Execucao buscarExecucaoDaOrdemServico(UUID ordemServicoId) {
+        var execucaoId = execucaoIdPorOrdemServico.get(ordemServicoId);
+        if (execucaoId == null) {
+            throw new NotFoundException("Execucao nao encontrada para a ordem de servico: " + ordemServicoId);
+        }
+        return buscarExecucao(execucaoId);
+    }
+
+    public synchronized Execucao iniciarDiagnostico(UUID execucaoId, String correlationId) {
+        var execucao = buscarExecucao(execucaoId);
+        var statusAnterior = execucao.status();
+        execucao.iniciarDiagnostico(agora());
+        salvarExecucaoEEvento(execucao, statusAnterior, "Diagnostico iniciado", "diagnosticoIniciado", "oficina.execution.diagnostico-iniciado", payloadDiagnosticoIniciado(execucao), correlationId);
+        return execucao;
+    }
+
+    public synchronized Execucao concluirDiagnostico(UUID execucaoId, String diagnostico, String correlationId) {
+        var execucao = buscarExecucao(execucaoId);
+        var statusAnterior = execucao.status();
+        execucao.concluirDiagnostico(diagnostico, agora());
+        salvarExecucaoEEvento(execucao, statusAnterior, "Diagnostico concluido", "diagnosticoFinalizado", "oficina.execution.diagnostico-finalizado", payloadDiagnosticoFinalizado(execucao), correlationId);
+        return execucao;
+    }
+
+    public synchronized Execucao iniciarReparo(UUID execucaoId, String correlationId) {
+        var execucao = buscarExecucao(execucaoId);
+        var statusAnterior = execucao.status();
+        execucao.iniciarReparo(agora());
+        salvarExecucaoEEvento(execucao, statusAnterior, "Reparo iniciado", "execucaoIniciada", "oficina.execution.execucao-iniciada", payloadExecucaoIniciada(execucao), correlationId);
+        return execucao;
+    }
+
+    public synchronized Execucao concluirReparo(UUID execucaoId, String observacoes, String correlationId) {
+        var execucao = buscarExecucao(execucaoId);
+        var statusAnterior = execucao.status();
+        execucao.concluirReparo(observacoes, agora());
+        salvarExecucaoEEvento(execucao, statusAnterior, "Reparo concluido", "execucaoFinalizada", "oficina.execution.execucao-finalizada", payloadExecucaoFinalizada(execucao), correlationId);
+        return execucao;
+    }
+
+    public synchronized Execucao cancelarExecucao(UUID execucaoId, String motivo) {
+        var execucao = buscarExecucao(execucaoId);
+        var statusAnterior = execucao.status();
+        execucao.cancelar(motivo, agora());
+        salvarExecucao(execucao);
+        salvarHistorico(execucao, statusAnterior, execucao.status(), "Execucao cancelada", null, execucao.atualizadoEm());
+        return execucao;
     }
 
     public synchronized OutboxEventRecord registrarOutbox(
@@ -147,7 +245,7 @@ public class DynamoDbExecutionStore {
         var event = new OutboxEventRecord(
                 UUID.randomUUID(),
                 eventType,
-                "1.0",
+                1,
                 topic,
                 "oficina-execution-service",
                 aggregateId,
@@ -177,6 +275,10 @@ public class DynamoDbExecutionStore {
         idempotencias.put(scope + "#" + key, record);
         put(idempotenciaItems, toItem(record));
         return record;
+    }
+
+    public synchronized boolean idempotenciaExiste(String scope, String key) {
+        return idempotencias.containsKey(scope + "#" + key);
     }
 
     public synchronized List<DynamoDbItem> catalogoItems() {
@@ -221,6 +323,133 @@ public class DynamoDbExecutionStore {
 
     private void salvarMovimento(MovimentoEstoque movimento) {
         put(estoqueItems, toItem(movimento));
+    }
+
+    private void salvarExecucaoEEvento(
+            Execucao execucao,
+            StatusExecucao statusAnterior,
+            String descricao,
+            String eventType,
+            String topic,
+            Map<String, Object> payload,
+            String correlationId) {
+        salvarExecucao(execucao);
+        salvarHistorico(execucao, statusAnterior, execucao.status(), descricao, null, execucao.atualizadoEm());
+        registrarOutbox(eventType, topic, execucao.ordemServicoId().toString(), payload, correlationId(correlationId));
+    }
+
+    private void salvarExecucao(Execucao execucao) {
+        execucoes.put(execucao.execucaoId(), execucao);
+        execucaoIdPorOrdemServico.put(execucao.ordemServicoId(), execucao.execucaoId());
+        put(execucaoItems, toItem(execucao));
+    }
+
+    private void salvarHistorico(
+            Execucao execucao,
+            StatusExecucao statusAnterior,
+            StatusExecucao statusNovo,
+            String descricao,
+            String sourceEventId,
+            OffsetDateTime criadoEm) {
+        var historicoId = UUID.randomUUID();
+        put(execucaoItems, new DynamoDbItem(
+                tableNames.execucoes(),
+                "EXECUCAO#" + execucao.execucaoId(),
+                "HISTORICO#" + criadoEm + "#" + historicoId,
+                "EXECUCAO_HISTORICO",
+                attributes(
+                        "historicoId", historicoId,
+                        "execucaoId", execucao.execucaoId(),
+                        "ordemServicoId", execucao.ordemServicoId(),
+                        "statusAnterior", statusAnterior,
+                        "statusNovo", statusNovo,
+                        "descricao", descricao,
+                        "createdAt", criadoEm,
+                        "sourceEventId", sourceEventId)));
+    }
+
+    private void registrarOutboxEstoque(MovimentoEstoque movimento, String correlationId) {
+        if (movimento.tipo() == TipoMovimentoEstoque.ENTRADA) {
+            registrarOutbox(
+                    "estoqueAcrescentado",
+                    "oficina.execution.estoque-acrescentado",
+                    movimento.pecaId().toString(),
+                    payloadEstoque(movimento),
+                    correlationId(correlationId));
+            return;
+        }
+        if (movimento.tipo() == TipoMovimentoEstoque.RESERVA || movimento.tipo() == TipoMovimentoEstoque.CONSUMO) {
+            registrarOutbox(
+                    "estoqueBaixado",
+                    "oficina.execution.estoque-baixado",
+                    movimento.pecaId().toString(),
+                    payloadEstoque(movimento),
+                    correlationId(correlationId));
+        }
+    }
+
+    private Map<String, Object> payloadDiagnosticoIniciado(Execucao execucao) {
+        return attributes(
+                "execucaoId", execucao.execucaoId(),
+                "ordemServicoId", execucao.ordemServicoId(),
+                "statusExecucao", execucao.status(),
+                "iniciadoEm", execucao.atualizadoEm());
+    }
+
+    private Map<String, Object> payloadDiagnosticoFinalizado(Execucao execucao) {
+        return attributes(
+                "execucaoId", execucao.execucaoId(),
+                "ordemServicoId", execucao.ordemServicoId(),
+                "statusExecucao", execucao.status(),
+                "diagnostico", execucao.diagnostico(),
+                "servicos", List.of(),
+                "pecas", List.of(),
+                "finalizadoEm", execucao.atualizadoEm());
+    }
+
+    private Map<String, Object> payloadExecucaoIniciada(Execucao execucao) {
+        return attributes(
+                "execucaoId", execucao.execucaoId(),
+                "ordemServicoId", execucao.ordemServicoId(),
+                "statusExecucao", execucao.status(),
+                "iniciadaEm", execucao.atualizadoEm());
+    }
+
+    private Map<String, Object> payloadExecucaoFinalizada(Execucao execucao) {
+        return attributes(
+                "execucaoId", execucao.execucaoId(),
+                "ordemServicoId", execucao.ordemServicoId(),
+                "statusExecucao", execucao.status(),
+                "observacoes", execucao.observacoesReparo(),
+                "finalizadaEm", execucao.atualizadoEm());
+    }
+
+    private Map<String, Object> payloadEstoque(MovimentoEstoque movimento) {
+        return attributes(
+                "movimentoId", movimento.movimentoId(),
+                "pecaId", movimento.pecaId(),
+                "ordemServicoId", movimento.ordemServicoId(),
+                "tipo", movimento.tipo(),
+                "quantidade", movimento.quantidade(),
+                "observacao", movimento.motivo(),
+                "movimentadoEm", movimento.criadoEm());
+    }
+
+    private DynamoDbItem toItem(Execucao execucao) {
+        return new DynamoDbItem(
+                tableNames.execucoes(),
+                "EXECUCAO#" + execucao.execucaoId(),
+                "METADATA",
+                "EXECUCAO",
+                attributes(
+                        "execucaoId", execucao.execucaoId(),
+                        "ordemServicoId", execucao.ordemServicoId(),
+                        "status", execucao.status(),
+                        "diagnostico", execucao.diagnostico(),
+                        "observacoesReparo", execucao.observacoesReparo(),
+                        "createdAt", execucao.criadoEm(),
+                        "updatedAt", execucao.atualizadoEm(),
+                        "correlationId", "local"));
     }
 
     private DynamoDbItem toItem(Servico servico) {
@@ -353,6 +582,10 @@ public class DynamoDbExecutionStore {
             throw new IllegalArgumentException("Codigo da peca e obrigatorio.");
         }
         return codigo.trim().toUpperCase();
+    }
+
+    private String correlationId(String correlationId) {
+        return correlationId == null || correlationId.isBlank() ? "local-" + UUID.randomUUID() : correlationId.trim();
     }
 
     private OffsetDateTime agora() {

@@ -8,7 +8,7 @@ import java.util.UUID;
 public record OutboxEventRecord(
         UUID eventId,
         String eventType,
-        String eventVersion,
+        int eventVersion,
         String topic,
         String producer,
         String aggregateId,
@@ -35,8 +35,8 @@ public record OutboxEventRecord(
         if (eventType == null || eventType.isBlank()) {
             throw new IllegalArgumentException("eventType da Outbox e obrigatorio.");
         }
-        if (eventVersion == null || eventVersion.isBlank()) {
-            throw new IllegalArgumentException("eventVersion da Outbox e obrigatorio.");
+        if (eventVersion <= 0) {
+            throw new IllegalArgumentException("eventVersion da Outbox deve ser positivo.");
         }
         if (topic == null || topic.isBlank()) {
             throw new IllegalArgumentException("Topico da Outbox e obrigatorio.");

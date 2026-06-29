@@ -3,6 +3,7 @@ package br.com.oficina.execution.framework.dynamodb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -61,5 +62,32 @@ class DynamoDbExecutionStoreTest {
                         && item.pk().equals("IDEMPOTENCY#POST /api/v1/execucoes#request-1")
                         && item.sk().equals("REQUEST")
                         && item.attributes().get("processingStatus").toString().equals("COMPLETED")));
+    }
+
+    @Test
+    void deveGerarOutboxParaMovimentosContratadosDeEstoque() {
+        store.registrarMovimento(
+                TipoMovimentoEstoque.ENTRADA,
+                DynamoDbExecutionStore.SEED_PECA_ID,
+                null,
+                2,
+                "Entrada operacional",
+                "corr-estoque-001");
+        store.registrarMovimento(
+                TipoMovimentoEstoque.RESERVA,
+                DynamoDbExecutionStore.SEED_PECA_ID,
+                DynamoDbExecutionStore.SEED_ORDEM_SERVICO_ID,
+                1,
+                "Reserva operacional",
+                "corr-estoque-001");
+
+        assertTrue(store.outboxEvents().stream().anyMatch(event ->
+                event.eventType().equals("estoqueAcrescentado")
+                        && event.eventVersion() == 1
+                        && event.topic().equals("oficina.execution.estoque-acrescentado")));
+        assertTrue(store.outboxEvents().stream().anyMatch(event ->
+                event.eventType().equals("estoqueBaixado")
+                        && event.eventVersion() == 1
+                        && event.topic().equals("oficina.execution.estoque-baixado")));
     }
 }
