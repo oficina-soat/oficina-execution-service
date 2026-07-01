@@ -73,4 +73,4 @@ src/main/java/br/com/oficina/execution/
 
 ## Próximo Trabalho
 
-O backlog local está em [TODO.md](TODO.md). O próximo incremento esperado é migrar catálogo técnico, peças, serviços e estoque a partir de [../oficina-app](../oficina-app/), reimplementando a persistência em DynamoDB conforme o [Padrão DynamoDB do oficina-execution-service](../oficina-platform/docs/dynamodb-execution-service.md).
+O backlog local está em [TODO.md](TODO.md). O próximo incremento esperado no Épico B2 é ampliar os testes unitários e de integração para controllers, use cases, persistência, idempotência, eventos e cenários principais da Saga, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).

@@ -164,6 +164,10 @@ public class DynamoDbExecutionStore {
     }
 
     public synchronized Execucao criarExecucao(UUID ordemServicoId) {
+        return criarExecucao(ordemServicoId, Execucao.PRIORIDADE_PADRAO);
+    }
+
+    public synchronized Execucao criarExecucao(UUID ordemServicoId, Integer prioridade) {
         if (ordemServicoId == null) {
             throw new IllegalArgumentException("ordemServicoId e obrigatorio.");
         }
@@ -171,7 +175,7 @@ public class DynamoDbExecutionStore {
             throw new WebApplicationException("Ja existe execucao para a ordem de servico: " + ordemServicoId, Response.Status.CONFLICT);
         }
         var agora = agora();
-        var execucao = new Execucao(UUID.randomUUID(), ordemServicoId, agora);
+        var execucao = new Execucao(UUID.randomUUID(), ordemServicoId, prioridadeOuPadrao(prioridade), agora);
         salvarExecucao(execucao);
         salvarHistorico(execucao, null, StatusExecucao.CRIADA, "Execucao criada", null, agora);
         return execucao;
@@ -186,6 +190,13 @@ public class DynamoDbExecutionStore {
         return execucoes.values().stream()
                 .filter(execucao -> status == null || execucao.status() == status)
                 .sorted(Comparator.comparing(Execucao::criadoEm))
+                .toList();
+    }
+
+    public synchronized List<Execucao> listarFilaExecucao(StatusExecucao status) {
+        return execucoes.values().stream()
+                .filter(execucao -> status == null ? statusEmFila(execucao.status()) : execucao.status() == status && statusEmFila(status))
+                .sorted(ordenacaoFila())
                 .toList();
     }
 
@@ -456,11 +467,14 @@ public class DynamoDbExecutionStore {
                         "execucaoId", execucao.execucaoId(),
                         "ordemServicoId", execucao.ordemServicoId(),
                         "status", execucao.status(),
+                        "prioridade", execucao.prioridade(),
                         "diagnostico", execucao.diagnostico(),
                         "observacoesReparo", execucao.observacoesReparo(),
                         "createdAt", execucao.criadoEm(),
                         "updatedAt", execucao.atualizadoEm(),
-                        "correlationId", "local"));
+                        "correlationId", "local",
+                        "filaStatus", filaStatus(execucao),
+                        "prioridadeCriadoEm", prioridadeCriadoEm(execucao)));
     }
 
     private DynamoDbItem toItem(Servico servico) {
@@ -593,6 +607,30 @@ public class DynamoDbExecutionStore {
             throw new IllegalArgumentException("Codigo da peca e obrigatorio.");
         }
         return codigo.trim().toUpperCase();
+    }
+
+    private int prioridadeOuPadrao(Integer prioridade) {
+        return prioridade == null ? Execucao.PRIORIDADE_PADRAO : prioridade;
+    }
+
+    private Comparator<Execucao> ordenacaoFila() {
+        return Comparator.comparingInt(Execucao::prioridade)
+                .thenComparing(Execucao::criadoEm)
+                .thenComparing(Execucao::execucaoId);
+    }
+
+    private boolean statusEmFila(StatusExecucao status) {
+        return status == StatusExecucao.CRIADA || status == StatusExecucao.DIAGNOSTICO_CONCLUIDO;
+    }
+
+    private String filaStatus(Execucao execucao) {
+        return statusEmFila(execucao.status()) ? execucao.status().name() : null;
+    }
+
+    private String prioridadeCriadoEm(Execucao execucao) {
+        return statusEmFila(execucao.status())
+                ? "%010d#%s#%s".formatted(execucao.prioridade(), execucao.criadoEm(), execucao.execucaoId())
+                : null;
     }
 
     private String correlationId(String correlationId) {

@@ -13,6 +13,7 @@
 - [ ] Implementar Outbox para eventos operacionais e de estoque.
 - [ ] Implementar publicação dos eventos de Execution.
 - [ ] Implementar consumo dos eventos de OS e Billing necessários ao fluxo operacional.
+- [x] Implementar fila de execução da OS com prioridade mínima, consulta REST e integração com as transições de diagnóstico e reparo.
 - [ ] Criar testes unitários, de integração e de contrato para APIs, DynamoDB, eventos, idempotência e fluxos operacionais da Saga.
 
 ## Eventos Produzidos

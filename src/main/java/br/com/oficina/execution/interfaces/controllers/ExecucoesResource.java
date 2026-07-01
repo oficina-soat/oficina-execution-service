@@ -34,7 +34,7 @@ public class ExecucoesResource {
     @Path("execucoes")
     @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Response criarExecucao(ExecucaoCreateRequest request) {
-        var execucao = toResponse(store.criarExecucao(request.ordemServicoId()));
+        var execucao = toResponse(store.criarExecucao(request.ordemServicoId(), request.prioridade()));
         return Response.created(URI.create("/api/v1/execucoes/" + execucao.execucaoId()))
                 .entity(execucao)
                 .build();
@@ -46,6 +46,17 @@ public class ExecucoesResource {
         return store.listarExecucoes(status).stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @GET
+    @Path("execucoes/fila")
+    public List<FilaExecucaoItemResponse> consultarFilaExecucao(@QueryParam("status") StatusExecucao status) {
+        var execucoes = store.listarFilaExecucao(status);
+        var itens = new java.util.ArrayList<FilaExecucaoItemResponse>(execucoes.size());
+        for (var i = 0; i < execucoes.size(); i++) {
+            itens.add(toFilaResponse(execucoes.get(i), i + 1));
+        }
+        return List.copyOf(itens);
     }
 
     @GET
@@ -114,13 +125,27 @@ public class ExecucoesResource {
                 execucao.execucaoId(),
                 execucao.ordemServicoId(),
                 execucao.status(),
+                execucao.prioridade(),
                 execucao.diagnostico(),
                 execucao.observacoesReparo(),
                 execucao.criadoEm(),
                 execucao.atualizadoEm());
     }
 
-    public record ExecucaoCreateRequest(UUID ordemServicoId) {
+    private FilaExecucaoItemResponse toFilaResponse(Execucao execucao, int posicao) {
+        return new FilaExecucaoItemResponse(
+                posicao,
+                execucao.execucaoId(),
+                execucao.ordemServicoId(),
+                execucao.status(),
+                execucao.prioridade(),
+                execucao.diagnostico(),
+                execucao.observacoesReparo(),
+                execucao.criadoEm(),
+                execucao.atualizadoEm());
+    }
+
+    public record ExecucaoCreateRequest(UUID ordemServicoId, Integer prioridade) {
     }
 
     public record ConclusaoDiagnosticoRequest(String diagnostico) {
@@ -136,6 +161,19 @@ public class ExecucoesResource {
             UUID execucaoId,
             UUID ordemServicoId,
             StatusExecucao status,
+            int prioridade,
+            String diagnostico,
+            String observacoesReparo,
+            OffsetDateTime criadoEm,
+            OffsetDateTime atualizadoEm) {
+    }
+
+    public record FilaExecucaoItemResponse(
+            int posicao,
+            UUID execucaoId,
+            UUID ordemServicoId,
+            StatusExecucao status,
+            int prioridade,
             String diagnostico,
             String observacoesReparo,
             OffsetDateTime criadoEm,

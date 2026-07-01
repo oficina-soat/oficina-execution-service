@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class DynamoDbExecutionStoreTest {
@@ -106,5 +107,27 @@ class DynamoDbExecutionStoreTest {
                 event.eventType().equals("estoqueBaixado")
                         && event.eventVersion() == 1
                         && event.topic().equals("oficina.execution.estoque-baixado")));
+    }
+
+    @Test
+    void deveMaterializarAtributosDeFilaDaExecucao() {
+        var execucao = store.criarExecucao(UUID.randomUUID(), 7);
+
+        assertEquals(execucao.execucaoId(), store.listarFilaExecucao(null).getFirst().execucaoId());
+        assertTrue(store.execucaoItems().stream().anyMatch(item ->
+                item.pk().equals("EXECUCAO#" + execucao.execucaoId())
+                        && item.sk().equals("METADATA")
+                        && item.attributes().get("prioridade").equals(7)
+                        && item.attributes().get("filaStatus").equals("CRIADA")
+                        && item.attributes().get("prioridadeCriadoEm").toString().startsWith("0000000007#")));
+
+        store.iniciarDiagnostico(execucao.execucaoId(), "corr-fila-store-001");
+
+        assertTrue(store.listarFilaExecucao(null).stream().noneMatch(item -> item.execucaoId().equals(execucao.execucaoId())));
+        assertTrue(store.execucaoItems().stream().anyMatch(item ->
+                item.pk().equals("EXECUCAO#" + execucao.execucaoId())
+                        && item.sk().equals("METADATA")
+                        && !item.attributes().containsKey("filaStatus")
+                        && !item.attributes().containsKey("prioridadeCriadoEm")));
     }
 }

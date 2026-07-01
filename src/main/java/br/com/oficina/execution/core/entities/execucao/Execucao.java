@@ -6,15 +6,22 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public final class Execucao {
+    public static final int PRIORIDADE_PADRAO = 100;
+
     private final UUID execucaoId;
     private final UUID ordemServicoId;
     private final OffsetDateTime criadoEm;
+    private final int prioridade;
     private StatusExecucao status;
     private String diagnostico;
     private String observacoesReparo;
     private OffsetDateTime atualizadoEm;
 
     public Execucao(UUID execucaoId, UUID ordemServicoId, OffsetDateTime criadoEm) {
+        this(execucaoId, ordemServicoId, PRIORIDADE_PADRAO, criadoEm);
+    }
+
+    public Execucao(UUID execucaoId, UUID ordemServicoId, int prioridade, OffsetDateTime criadoEm) {
         if (execucaoId == null) {
             throw new IllegalArgumentException("Identificador da execucao e obrigatorio.");
         }
@@ -24,9 +31,13 @@ public final class Execucao {
         if (criadoEm == null) {
             throw new IllegalArgumentException("Data de criacao da execucao e obrigatoria.");
         }
+        if (prioridade < 0) {
+            throw new IllegalArgumentException("prioridade deve ser maior ou igual a zero.");
+        }
         this.execucaoId = execucaoId;
         this.ordemServicoId = ordemServicoId;
         this.criadoEm = criadoEm;
+        this.prioridade = prioridade;
         this.atualizadoEm = criadoEm;
         this.status = StatusExecucao.CRIADA;
     }
@@ -71,6 +82,10 @@ public final class Execucao {
 
     public StatusExecucao status() {
         return status;
+    }
+
+    public int prioridade() {
+        return prioridade;
     }
 
     public String diagnostico() {
