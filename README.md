@@ -28,6 +28,19 @@ O serviço não é dono de Cliente, Veículo, estado global da Ordem de Serviço
 ./mvnw package -Pdynamodb
 ```
 
+## Cobertura
+
+O JaCoCo é executado no `verify`, gera relatório em `target/jacoco-report/` e falha o build quando a cobertura de instruções do bundle fica abaixo de 80%. O [Template GitHub Actions para Microsserviços](../oficina-platform/templates/github-actions/README.md) publica esse diretório como artifact `jacoco-report-oficina-execution-service`.
+
+Evidência local de cobertura em 2026-07-01:
+
+```text
+./mvnw -B verify -Pdynamodb -DskipITs=false -DfailIfNoTests=false
+instruction=90.85% branch=68.17% line=90.69% complexity=72.85%
+Tests run: 33, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
 ## Docker
 
 ```bash
@@ -73,4 +86,4 @@ src/main/java/br/com/oficina/execution/
 
 ## Próximo Trabalho
 
-O backlog local está em [TODO.md](TODO.md). O próximo incremento esperado no Épico B2 é ampliar os testes unitários e de integração para controllers, use cases, persistência, idempotência, eventos e cenários principais da Saga, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
+O backlog local está em [TODO.md](TODO.md). O próximo incremento esperado no Épico B2 é validar contratos OpenAPI, schemas JSON de eventos, erro padronizado, idempotência e Saga, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
