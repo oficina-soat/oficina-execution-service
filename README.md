@@ -72,6 +72,18 @@ docker run --rm -p 8080:8080 oficina-execution-service:local
 
 Health checks do Quarkus ficam em `/q/health`, `/q/health/live` e `/q/health/ready`.
 
+## Swagger/OpenAPI
+
+O contrato canônico do serviço é a [OpenAPI do oficina-execution-service](../oficina-platform/contracts/openapi/oficina-execution-service.yaml), mantida no repositório de plataforma.
+
+Com o serviço em execução local na porta `8080`, a documentação gerada pelo Quarkus fica disponível em:
+
+- Swagger UI: `http://localhost:8080/q/swagger-ui/`;
+- OpenAPI YAML: `http://localhost:8080/q/openapi`;
+- OpenAPI JSON: `http://localhost:8080/q/openapi?format=json`.
+
+O teste [PlatformContractsTest](src/test/java/br/com/oficina/execution/contracts/PlatformContractsTest.java) valida que a OpenAPI gerada em runtime mantém os caminhos e métodos definidos no contrato canônico.
+
 ## Contratos
 
 - [Contrato de APIs REST](../oficina-platform/contracts/Contrato%20de%20APIs%20REST.md)
@@ -104,4 +116,4 @@ src/main/java/br/com/oficina/execution/
 
 ## Próximo Trabalho
 
-O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados no Épico B2 são configurar a proteção da branch `main`, registrar Swagger/OpenAPI no README e documentar a justificativa da Saga orquestrada pelo `oficina-os-service`, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
+O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados no Épico B2 são configurar a proteção da branch `main` e documentar a justificativa da Saga orquestrada pelo `oficina-os-service`, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
