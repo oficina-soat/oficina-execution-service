@@ -29,12 +29,39 @@ O `oficina-execution-service` participa da Saga como autoridade operacional. Ele
 - Amazon DynamoDB
 - JWT, OpenAPI, Health, métricas Prometheus, logs JSON e OpenTelemetry
 
+## Setup local
+
+Pré-requisitos:
+
+- Java 25;
+- Docker, para build de imagem e dependências locais;
+- acesso ao repositório `../oficina-platform`, usado pelos testes de contrato;
+- acesso opcional ao repositório `../oficina-infra`, usado para subir dependências compartilhadas da suíte.
+
+Dependências locais compartilhadas podem ser iniciadas pelo `oficina-infra`:
+
+```bash
+cd ../oficina-infra
+docker compose -f compose.local.yml up -d postgres dynamodb localstack
+scripts/local/bootstrap-local.sh
+```
+
+Volte para este repositório antes de executar o serviço:
+
+```bash
+cd ../oficina-execution-service
+```
+
 ## Execução local
 
 ```bash
+./mvnw quarkus:dev -Pdynamodb
 ./mvnw test -Pdynamodb
-./mvnw package -Pdynamodb
+./mvnw -B verify -Pdynamodb -DskipITs=false -DfailIfNoTests=false
+./mvnw -B package -Pdynamodb
 ```
+
+O comando `verify` executa testes unitários, integração, contrato e verificação de cobertura JaCoCo.
 
 ## Cobertura
 
@@ -120,6 +147,8 @@ O teste [PlatformContractsTest](src/test/java/br/com/oficina/execution/contracts
 - `MP_JWT_VERIFY_PUBLICKEY_LOCATION`
 - `OTEL_EXPORTER_OTLP_ENDPOINT`
 - `DEPLOYMENT_ENVIRONMENT`
+
+Em ambiente local, valores de desenvolvimento ficam em `src/main/resources/application.properties`. Em Kubernetes, variáveis de DynamoDB e observabilidade vêm do ConfigMap definido pelo manifest canônico no `oficina-infra`; permissões AWS devem ser resolvidas pela infraestrutura do ambiente.
 
 ## Estrutura
 
