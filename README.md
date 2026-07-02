@@ -41,6 +41,10 @@ Tests run: 33, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
+## Validação de contratos
+
+O teste [PlatformContractsTest](src/test/java/br/com/oficina/execution/contracts/PlatformContractsTest.java) valida o serviço contra os contratos canônicos em `../oficina-platform/contracts`: OpenAPI, schemas JSON de eventos, [Contrato de Erros REST](../oficina-platform/contracts/error-model.md), [Contrato de Idempotência](../oficina-platform/contracts/idempotency.md) e [Contrato de Saga do oficina-os-service](../oficina-platform/contracts/saga/oficina-os-saga-v1.md).
+
 ## Docker
 
 ```bash
@@ -86,4 +90,4 @@ src/main/java/br/com/oficina/execution/
 
 ## Próximo Trabalho
 
-O backlog local está em [TODO.md](TODO.md). O próximo incremento esperado no Épico B2 é validar contratos OpenAPI, schemas JSON de eventos, erro padronizado, idempotência e Saga, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
+O backlog local está em [TODO.md](TODO.md). O próximo incremento esperado no Épico B2 é copiar e adaptar workflows de CI/CD, garantindo build, testes, Quality Gate, publicação de imagem e deploy automatizado, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
