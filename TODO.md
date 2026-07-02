@@ -17,7 +17,7 @@
 - [x] Criar testes unitários e de integração mínimos para APIs, DynamoDB, eventos, idempotência e fluxos operacionais da Saga.
 - [x] Configurar cobertura mínima de 80% com JaCoCo e evidência no README/CI, conforme [Padrão BDD, Cobertura e Qualidade](../oficina-platform/docs/bdd-testing.md).
 - [x] Validar contratos OpenAPI, schemas JSON de eventos, erro padronizado, idempotência e Saga.
-- [ ] Copiar e adaptar workflows de CI/CD, garantindo build, testes, Quality Gate, publicação de imagem e deploy automatizado.
+- [x] Copiar e adaptar workflows de CI/CD, garantindo build, testes, Quality Gate, publicação de imagem e deploy automatizado condicionado por variáveis de ambiente.
 
 ## Eventos Produzidos
 
