@@ -89,6 +89,7 @@ jobs:
         run: ./mvnw -B verify -P"${MAVEN_PROFILE}" -DskipITs=false -DfailIfNoTests=false
 
       - name: Run optional SonarCloud quality gate
+        if: ${{ github.event_name == 'pull_request' }}
         shell: bash
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
