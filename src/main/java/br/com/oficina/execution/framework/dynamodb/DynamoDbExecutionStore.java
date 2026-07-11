@@ -40,6 +40,7 @@ public class DynamoDbExecutionStore {
     private static final String ATTR_PECA_ID = "pecaId";
     private static final String ATTR_CREATED_AT = "createdAt";
     private static final String ATTR_UPDATED_AT = "updatedAt";
+    private static final String ATTR_CORRELATION_ID = "correlationId";
     private static final String SORT_KEY_METADATA = "METADATA";
     private static final String KEY_PREFIX_PECA = "PECA#";
 
@@ -486,7 +487,7 @@ public class DynamoDbExecutionStore {
                         "observacoesReparo", execucao.observacoesReparo(),
                         ATTR_CREATED_AT, execucao.criadoEm(),
                         ATTR_UPDATED_AT, execucao.atualizadoEm(),
-                        "correlationId", "local",
+                        ATTR_CORRELATION_ID, "local",
                         "filaStatus", filaStatus(execucao),
                         "prioridadeCriadoEm", prioridadeCriadoEm(execucao)));
     }
@@ -571,7 +572,7 @@ public class DynamoDbExecutionStore {
                         "status", event.status(),
                         "attempts", event.attempts(),
                         "nextAttemptAt", event.nextAttemptAt(),
-                        "correlationId", event.correlationId(),
+                        ATTR_CORRELATION_ID, event.correlationId(),
                         ATTR_CREATED_AT, event.createdAt(),
                         ATTR_UPDATED_AT, event.updatedAt()));
     }
@@ -651,7 +652,7 @@ public class DynamoDbExecutionStore {
         if (correlationId != null && !correlationId.isBlank()) {
             return correlationId.trim();
         }
-        var mdcCorrelationId = MDC.get("correlationId");
+        var mdcCorrelationId = MDC.get(ATTR_CORRELATION_ID);
         if (mdcCorrelationId != null && !mdcCorrelationId.toString().isBlank()) {
             return mdcCorrelationId.toString();
         }
@@ -660,7 +661,7 @@ public class DynamoDbExecutionStore {
 
     private void logEvent(String message, OutboxEventRecord event, String messageStatus) {
         StructuredLog.info(LOG, message, Map.of(
-                "correlationId", event.correlationId(),
+                ATTR_CORRELATION_ID, event.correlationId(),
                 "eventId", event.eventId().toString(),
                 "eventType", event.eventType(),
                 "eventVersion", event.eventVersion(),

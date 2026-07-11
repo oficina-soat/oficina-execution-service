@@ -16,51 +16,31 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class CatalogoController {
-    private final CriarServicoUseCase criarServicoUseCase;
-    private final ListarServicosUseCase listarServicosUseCase;
-    private final BuscarServicoUseCase buscarServicoUseCase;
-    private final AtualizarServicoUseCase atualizarServicoUseCase;
-    private final CriarPecaUseCase criarPecaUseCase;
-    private final ListarPecasUseCase listarPecasUseCase;
-    private final BuscarPecaUseCase buscarPecaUseCase;
-    private final AtualizarPecaUseCase atualizarPecaUseCase;
+    private final ServicoUseCases servicos;
+    private final PecaUseCases pecas;
 
-    public CatalogoController(
-            CriarServicoUseCase criarServicoUseCase,
-            ListarServicosUseCase listarServicosUseCase,
-            BuscarServicoUseCase buscarServicoUseCase,
-            AtualizarServicoUseCase atualizarServicoUseCase,
-            CriarPecaUseCase criarPecaUseCase,
-            ListarPecasUseCase listarPecasUseCase,
-            BuscarPecaUseCase buscarPecaUseCase,
-            AtualizarPecaUseCase atualizarPecaUseCase) {
-        this.criarServicoUseCase = criarServicoUseCase;
-        this.listarServicosUseCase = listarServicosUseCase;
-        this.buscarServicoUseCase = buscarServicoUseCase;
-        this.atualizarServicoUseCase = atualizarServicoUseCase;
-        this.criarPecaUseCase = criarPecaUseCase;
-        this.listarPecasUseCase = listarPecasUseCase;
-        this.buscarPecaUseCase = buscarPecaUseCase;
-        this.atualizarPecaUseCase = atualizarPecaUseCase;
+    public CatalogoController(ServicoUseCases servicos, PecaUseCases pecas) {
+        this.servicos = servicos;
+        this.pecas = pecas;
     }
 
     public CompletableFuture<Servico> criarServico(ServicoRequest request) {
-        return criarServicoUseCase.executar(new CriarServicoUseCase.Command(
+        return servicos.criar().executar(new CriarServicoUseCase.Command(
                 request.nome(),
                 request.descricao(),
                 request.valorBase()));
     }
 
     public CompletableFuture<List<Servico>> consultarServicos() {
-        return listarServicosUseCase.executar();
+        return servicos.listar().executar();
     }
 
     public CompletableFuture<Servico> consultarServico(UUID servicoId) {
-        return buscarServicoUseCase.executar(servicoId);
+        return servicos.buscar().executar(servicoId);
     }
 
     public CompletableFuture<Servico> atualizarServico(UUID servicoId, ServicoRequest request) {
-        return atualizarServicoUseCase.executar(new AtualizarServicoUseCase.Command(
+        return servicos.atualizar().executar(new AtualizarServicoUseCase.Command(
                 servicoId,
                 request.nome(),
                 request.descricao(),
@@ -68,22 +48,22 @@ public class CatalogoController {
     }
 
     public CompletableFuture<Peca> criarPeca(PecaRequest request) {
-        return criarPecaUseCase.executar(new CriarPecaUseCase.Command(
+        return pecas.criar().executar(new CriarPecaUseCase.Command(
                 request.nome(),
                 request.codigo(),
                 request.valorUnitario()));
     }
 
     public CompletableFuture<List<Peca>> consultarPecas() {
-        return listarPecasUseCase.executar();
+        return pecas.listar().executar();
     }
 
     public CompletableFuture<Peca> consultarPeca(UUID pecaId) {
-        return buscarPecaUseCase.executar(pecaId);
+        return pecas.buscar().executar(pecaId);
     }
 
     public CompletableFuture<Peca> atualizarPeca(UUID pecaId, PecaRequest request) {
-        return atualizarPecaUseCase.executar(new AtualizarPecaUseCase.Command(
+        return pecas.atualizar().executar(new AtualizarPecaUseCase.Command(
                 pecaId,
                 request.nome(),
                 request.codigo(),
@@ -94,5 +74,19 @@ public class CatalogoController {
     }
 
     public record PecaRequest(String nome, String codigo, BigDecimal valorUnitario) {
+    }
+
+    public record ServicoUseCases(
+            CriarServicoUseCase criar,
+            ListarServicosUseCase listar,
+            BuscarServicoUseCase buscar,
+            AtualizarServicoUseCase atualizar) {
+    }
+
+    public record PecaUseCases(
+            CriarPecaUseCase criar,
+            ListarPecasUseCase listar,
+            BuscarPecaUseCase buscar,
+            AtualizarPecaUseCase atualizar) {
     }
 }
