@@ -45,14 +45,16 @@ public class ExecutionConfiguration {
     @Produces
     CatalogoController catalogoController(CatalogoGateway catalogoGateway) {
         return new CatalogoController(
-                new CriarServicoUseCase(catalogoGateway),
-                new ListarServicosUseCase(catalogoGateway),
-                new BuscarServicoUseCase(catalogoGateway),
-                new AtualizarServicoUseCase(catalogoGateway),
-                new CriarPecaUseCase(catalogoGateway),
-                new ListarPecasUseCase(catalogoGateway),
-                new BuscarPecaUseCase(catalogoGateway),
-                new AtualizarPecaUseCase(catalogoGateway));
+                new CatalogoController.ServicoUseCases(
+                        new CriarServicoUseCase(catalogoGateway),
+                        new ListarServicosUseCase(catalogoGateway),
+                        new BuscarServicoUseCase(catalogoGateway),
+                        new AtualizarServicoUseCase(catalogoGateway)),
+                new CatalogoController.PecaUseCases(
+                        new CriarPecaUseCase(catalogoGateway),
+                        new ListarPecasUseCase(catalogoGateway),
+                        new BuscarPecaUseCase(catalogoGateway),
+                        new AtualizarPecaUseCase(catalogoGateway)));
     }
 
     @Produces
@@ -66,16 +68,18 @@ public class ExecutionConfiguration {
     @Produces
     ExecucoesController execucoesController(ExecucaoGateway execucaoGateway) {
         return new ExecucoesController(
-                new CriarExecucaoUseCase(execucaoGateway),
-                new ListarExecucoesUseCase(execucaoGateway),
-                new ListarFilaExecucaoUseCase(execucaoGateway),
-                new BuscarExecucaoUseCase(execucaoGateway),
-                new BuscarExecucaoDaOrdemServicoUseCase(execucaoGateway),
-                new IniciarDiagnosticoUseCase(execucaoGateway),
-                new ConcluirDiagnosticoUseCase(execucaoGateway),
-                new IniciarReparoUseCase(execucaoGateway),
-                new ConcluirReparoUseCase(execucaoGateway),
-                new CancelarExecucaoUseCase(execucaoGateway));
+                new ExecucoesController.ExecucaoQueryUseCases(
+                        new ListarExecucoesUseCase(execucaoGateway),
+                        new ListarFilaExecucaoUseCase(execucaoGateway),
+                        new BuscarExecucaoUseCase(execucaoGateway),
+                        new BuscarExecucaoDaOrdemServicoUseCase(execucaoGateway)),
+                new ExecucoesController.ExecucaoCommandUseCases(
+                        new CriarExecucaoUseCase(execucaoGateway),
+                        new IniciarDiagnosticoUseCase(execucaoGateway),
+                        new ConcluirDiagnosticoUseCase(execucaoGateway),
+                        new IniciarReparoUseCase(execucaoGateway),
+                        new ConcluirReparoUseCase(execucaoGateway),
+                        new CancelarExecucaoUseCase(execucaoGateway)));
     }
 
     @Produces
