@@ -1,5 +1,6 @@
 package br.com.oficina.execution.framework.messaging;
 
+import br.com.oficina.execution.core.exceptions.ResourceNotFoundException;
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import br.com.oficina.execution.framework.observability.StructuredLog;
@@ -65,7 +66,7 @@ public class ExecutionEventConsumer {
         try {
             var execucao = store.buscarExecucaoDaOrdemServico(ordemServicoId(envelope));
             store.cancelarExecucao(execucao.execucaoId(), "Saga compensada");
-        } catch (jakarta.ws.rs.NotFoundException _) {
+        } catch (ResourceNotFoundException _) {
             // A compensacao pode chegar antes de existir contexto local de execucao.
         }
     }
