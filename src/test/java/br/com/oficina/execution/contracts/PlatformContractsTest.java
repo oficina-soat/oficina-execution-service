@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.oficina.execution.framework.messaging.DomainEventEnvelope;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbLocalTestResource;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import java.io.IOException;
@@ -25,6 +27,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
+@QuarkusTestResource(DynamoDbLocalTestResource.class)
 class PlatformContractsTest {
     private static final Path CONTRACTS_DIR = Path.of("..", "oficina-platform", "contracts");
     private static final ObjectMapper MAPPER = new ObjectMapper();

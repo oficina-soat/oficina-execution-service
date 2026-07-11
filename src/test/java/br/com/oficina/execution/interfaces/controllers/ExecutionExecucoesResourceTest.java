@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbLocalTestResource;
+import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.util.List;
@@ -17,6 +19,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
+@QuarkusTestResource(DynamoDbLocalTestResource.class)
 class ExecutionExecucoesResourceTest {
     @Inject
     DynamoDbExecutionStore store;

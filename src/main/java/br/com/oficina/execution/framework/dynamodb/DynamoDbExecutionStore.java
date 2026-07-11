@@ -24,6 +24,14 @@ import java.util.Map;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.Put;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
+import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
+import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
 
 @ApplicationScoped
 public class DynamoDbExecutionStore {
@@ -41,31 +49,24 @@ public class DynamoDbExecutionStore {
     private static final String ATTR_CREATED_AT = "createdAt";
     private static final String ATTR_UPDATED_AT = "updatedAt";
     private static final String ATTR_CORRELATION_ID = "correlationId";
+    private static final String ATTR_PK = "PK";
+    private static final String ATTR_SK = "SK";
+    private static final String ATTR_ENTITY_TYPE = "entityType";
     private static final String SORT_KEY_METADATA = "METADATA";
     private static final String KEY_PREFIX_PECA = "PECA#";
+    private static final String KEY_PREFIX_SERVICO = "SERVICO#";
+    private static final String KEY_PREFIX_EXECUCAO = "EXECUCAO#";
 
     private final DynamoDbTableNames tableNames;
-    private final LinkedHashMap<UUID, Peca> pecas = new LinkedHashMap<>();
-    private final LinkedHashMap<String, UUID> pecaIdsPorCodigo = new LinkedHashMap<>();
-    private final LinkedHashMap<UUID, Servico> servicos = new LinkedHashMap<>();
-    private final LinkedHashMap<UUID, Estoque> saldos = new LinkedHashMap<>();
-    private final LinkedHashMap<UUID, Execucao> execucoes = new LinkedHashMap<>();
-    private final LinkedHashMap<UUID, UUID> execucaoIdPorOrdemServico = new LinkedHashMap<>();
-    private final List<MovimentoEstoque> movimentos = new ArrayList<>();
-    private final LinkedHashMap<String, DynamoDbItem> catalogoItems = new LinkedHashMap<>();
-    private final LinkedHashMap<String, DynamoDbItem> estoqueItems = new LinkedHashMap<>();
-    private final LinkedHashMap<String, DynamoDbItem> execucaoItems = new LinkedHashMap<>();
-    private final LinkedHashMap<String, DynamoDbItem> outboxItems = new LinkedHashMap<>();
-    private final LinkedHashMap<String, DynamoDbItem> idempotenciaItems = new LinkedHashMap<>();
-    private final LinkedHashMap<UUID, OutboxEventRecord> outbox = new LinkedHashMap<>();
-    private final LinkedHashMap<String, IdempotencyRecord> idempotencias = new LinkedHashMap<>();
+    private final DynamoDbClient dynamoDbClient;
 
-    public DynamoDbExecutionStore(DynamoDbTableNames tableNames) {
+    public DynamoDbExecutionStore(DynamoDbTableNames tableNames, DynamoDbClient dynamoDbClient) {
         this.tableNames = tableNames;
+        this.dynamoDbClient = dynamoDbClient;
         aplicarSeedLimpo();
     }
 
-    public synchronized void aplicarSeedLimpo() {
+    public void aplicarSeedLimpo() {
         for (var peca : ExecutionDynamoDbSeedData.pecas()) {
             salvarPeca(new Peca(peca.pecaId(), peca.nome(), peca.codigo(), peca.valorUnitario(), ExecutionDynamoDbSeedData.SEED_TIME));
         }
@@ -77,90 +78,96 @@ public class DynamoDbExecutionStore {
         }
     }
 
-    public synchronized Servico criarServico(String nome, String descricao, BigDecimal valorBase) {
+    public Servico criarServico(String nome, String descricao, BigDecimal valorBase) {
         var agora = agora();
         var servico = new Servico(UUID.randomUUID(), nome, descricao, valorBase, agora);
         salvarServico(servico);
         return servico;
     }
 
-    public synchronized List<Servico> listarServicos() {
-        return servicos.values().stream()
+    public List<Servico> listarServicos() {
+        return catalogoItems().stream()
+                .filter(item -> item.entityType().equals("SERVICO"))
+                .map(this::toServico)
                 .sorted(Comparator.comparing(Servico::criadoEm))
                 .toList();
     }
 
-    public synchronized Servico buscarServico(UUID servicoId) {
-        var servico = servicos.get(servicoId);
-        if (servico == null) {
-            throw new ResourceNotFoundException("Servico nao encontrado: " + servicoId);
-        }
-        return servico;
+    public Servico buscarServico(UUID servicoId) {
+        return getItem(tableNames.catalogo(), KEY_PREFIX_SERVICO + servicoId, SORT_KEY_METADATA)
+                .filter(item -> item.entityType().equals("SERVICO"))
+                .map(this::toServico)
+                .orElseThrow(() -> new ResourceNotFoundException("Servico nao encontrado: " + servicoId));
     }
 
-    public synchronized Servico atualizarServico(UUID servicoId, String nome, String descricao, BigDecimal valorBase) {
+    public Servico atualizarServico(UUID servicoId, String nome, String descricao, BigDecimal valorBase) {
         var servico = buscarServico(servicoId);
         servico.atualizar(nome, descricao, valorBase, agora());
         salvarServico(servico);
         return servico;
     }
 
-    public synchronized Peca criarPeca(String nome, String codigo, BigDecimal valorUnitario) {
+    public Peca criarPeca(String nome, String codigo, BigDecimal valorUnitario) {
         var agora = agora();
         var codigoNormalizado = normalizarCodigo(codigo);
         exigirCodigoDisponivel(codigoNormalizado, null);
         var peca = new Peca(UUID.randomUUID(), nome, codigoNormalizado, valorUnitario, agora);
-        salvarPeca(peca);
-        salvarSaldo(new Estoque(peca.pecaId(), 0, 0, agora));
+        var saldo = new Estoque(peca.pecaId(), 0, 0, agora);
+        transactPut(toItem(peca), toItem(saldo));
         return peca;
     }
 
-    public synchronized List<Peca> listarPecas() {
-        return pecas.values().stream()
+    public List<Peca> listarPecas() {
+        return catalogoItems().stream()
+                .filter(item -> item.entityType().equals("PECA"))
+                .map(this::toPeca)
                 .sorted(Comparator.comparing(Peca::criadoEm))
                 .toList();
     }
 
-    public synchronized Peca buscarPeca(UUID pecaId) {
-        var peca = pecas.get(pecaId);
-        if (peca == null) {
-            throw new ResourceNotFoundException("Peca nao encontrada: " + pecaId);
-        }
-        return peca;
+    public Peca buscarPeca(UUID pecaId) {
+        return getItem(tableNames.catalogo(), KEY_PREFIX_PECA + pecaId, SORT_KEY_METADATA)
+                .filter(item -> item.entityType().equals("PECA"))
+                .map(this::toPeca)
+                .orElseThrow(() -> new ResourceNotFoundException("Peca nao encontrada: " + pecaId));
     }
 
-    public synchronized Peca atualizarPeca(UUID pecaId, String nome, String codigo, BigDecimal valorUnitario) {
+    public Peca atualizarPeca(UUID pecaId, String nome, String codigo, BigDecimal valorUnitario) {
         var peca = buscarPeca(pecaId);
         var codigoNormalizado = normalizarCodigo(codigo);
         exigirCodigoDisponivel(codigoNormalizado, pecaId);
-        pecaIdsPorCodigo.remove(peca.codigo());
         peca.atualizar(nome, codigoNormalizado, valorUnitario, agora());
         salvarPeca(peca);
         return peca;
     }
 
-    public synchronized Estoque buscarSaldo(UUID pecaId) {
+    public Estoque buscarSaldo(UUID pecaId) {
         buscarPeca(pecaId);
-        return saldos.computeIfAbsent(pecaId, id -> {
-            var saldo = new Estoque(id, 0, 0, agora());
-            salvarSaldo(saldo);
-            return saldo;
-        });
+        return getItem(tableNames.estoque(), KEY_PREFIX_PECA + pecaId, "SALDO")
+                .filter(item -> item.entityType().equals("ESTOQUE_SALDO"))
+                .map(this::toEstoque)
+                .orElseGet(() -> {
+                    var saldo = new Estoque(pecaId, 0, 0, agora());
+                    salvarSaldo(saldo);
+                    return saldo;
+                });
     }
 
-    public synchronized List<MovimentoEstoque> listarMovimentos(UUID pecaId, UUID ordemServicoId) {
-        return movimentos.stream()
+    public List<MovimentoEstoque> listarMovimentos(UUID pecaId, UUID ordemServicoId) {
+        return estoqueItems().stream()
+                .filter(item -> item.entityType().equals("ESTOQUE_MOVIMENTO"))
+                .map(this::toMovimento)
                 .filter(movimento -> pecaId == null || movimento.pecaId().equals(pecaId))
                 .filter(movimento -> ordemServicoId == null || ordemServicoId.equals(movimento.ordemServicoId()))
                 .sorted(Comparator.comparing(MovimentoEstoque::criadoEm))
                 .toList();
     }
 
-    public synchronized MovimentoEstoque registrarMovimento(TipoMovimentoEstoque tipo, UUID pecaId, UUID ordemServicoId, int quantidade, String motivo) {
+    public MovimentoEstoque registrarMovimento(TipoMovimentoEstoque tipo, UUID pecaId, UUID ordemServicoId, int quantidade, String motivo) {
         return registrarMovimento(tipo, pecaId, ordemServicoId, quantidade, motivo, "local");
     }
 
-    public synchronized MovimentoEstoque registrarMovimento(
+    public MovimentoEstoque registrarMovimento(
             TipoMovimentoEstoque tipo,
             UUID pecaId,
             UUID ordemServicoId,
@@ -169,67 +176,73 @@ public class DynamoDbExecutionStore {
             String correlationId) {
         var saldo = buscarSaldo(pecaId);
         var movimento = saldo.registrar(tipo, quantidade, ordemServicoId, motivo, agora());
-        movimentos.add(movimento);
-        salvarSaldo(saldo);
-        salvarMovimento(movimento);
-        registrarOutboxEstoque(movimento, correlationId);
+        var outbox = outboxEstoque(movimento, correlationId);
+        if (outbox == null) {
+            transactPut(toItem(saldo), toItem(movimento));
+        } else {
+            transactPut(toItem(saldo), toItem(movimento), toItem(outbox));
+            logEvent("outbox event registered", outbox, "PENDING");
+        }
         return movimento;
     }
 
-    public synchronized Execucao criarExecucao(UUID ordemServicoId) {
+    public Execucao criarExecucao(UUID ordemServicoId) {
         return criarExecucao(ordemServicoId, Execucao.PRIORIDADE_PADRAO);
     }
 
-    public synchronized Execucao criarExecucao(UUID ordemServicoId, Integer prioridade) {
+    public Execucao criarExecucao(UUID ordemServicoId, Integer prioridade) {
         if (ordemServicoId == null) {
             throw new IllegalArgumentException("ordemServicoId e obrigatorio.");
         }
-        if (execucaoIdPorOrdemServico.containsKey(ordemServicoId)) {
+        if (findExecucaoDaOrdemServico(ordemServicoId) != null) {
             throw new BusinessConflictException("Ja existe execucao para a ordem de servico: " + ordemServicoId);
         }
         var agora = agora();
         var execucao = new Execucao(UUID.randomUUID(), ordemServicoId, prioridadeOuPadrao(prioridade), agora);
-        salvarExecucao(execucao);
-        salvarHistorico(execucao, null, StatusExecucao.CRIADA, "Execucao criada", null, agora);
+        var historico = historico(execucao, null, StatusExecucao.CRIADA, "Execucao criada", null, agora);
+        transactPut(toItem(execucao), historico);
         return execucao;
     }
 
-    public synchronized Execucao criarExecucaoSeAusente(UUID ordemServicoId) {
-        var execucaoId = execucaoIdPorOrdemServico.get(ordemServicoId);
-        return execucaoId == null ? criarExecucao(ordemServicoId) : buscarExecucao(execucaoId);
+    public Execucao criarExecucaoSeAusente(UUID ordemServicoId) {
+        var execucao = findExecucaoDaOrdemServico(ordemServicoId);
+        return execucao == null ? criarExecucao(ordemServicoId) : execucao;
     }
 
-    public synchronized List<Execucao> listarExecucoes(StatusExecucao status) {
-        return execucoes.values().stream()
+    public List<Execucao> listarExecucoes(StatusExecucao status) {
+        return execucaoItems().stream()
+                .filter(item -> item.entityType().equals("EXECUCAO"))
+                .map(this::toExecucao)
                 .filter(execucao -> status == null || execucao.status() == status)
                 .sorted(Comparator.comparing(Execucao::criadoEm))
                 .toList();
     }
 
-    public synchronized List<Execucao> listarFilaExecucao(StatusExecucao status) {
-        return execucoes.values().stream()
+    public List<Execucao> listarFilaExecucao(StatusExecucao status) {
+        return execucaoItems().stream()
+                .filter(item -> item.entityType().equals("EXECUCAO"))
+                .map(this::toExecucao)
                 .filter(execucao -> status == null ? statusEmFila(execucao.status()) : execucao.status() == status && statusEmFila(status))
                 .sorted(ordenacaoFila())
                 .toList();
     }
 
-    public synchronized Execucao buscarExecucao(UUID execucaoId) {
-        var execucao = execucoes.get(execucaoId);
+    public Execucao buscarExecucao(UUID execucaoId) {
+        return getItem(tableNames.execucoes(), KEY_PREFIX_EXECUCAO + execucaoId, SORT_KEY_METADATA)
+                .filter(item -> item.entityType().equals("EXECUCAO"))
+                .map(this::toExecucao)
+                .orElseThrow(() -> new ResourceNotFoundException("Execucao nao encontrada: " + execucaoId));
+    }
+
+    public Execucao buscarExecucaoDaOrdemServico(UUID ordemServicoId) {
+        var execucao = findExecucaoDaOrdemServico(ordemServicoId);
         if (execucao == null) {
-            throw new ResourceNotFoundException("Execucao nao encontrada: " + execucaoId);
+            throw new ResourceNotFoundException("Execucao nao encontrada para a ordem de servico: " + ordemServicoId);
         }
         return execucao;
     }
 
-    public synchronized Execucao buscarExecucaoDaOrdemServico(UUID ordemServicoId) {
-        var execucaoId = execucaoIdPorOrdemServico.get(ordemServicoId);
-        if (execucaoId == null) {
-            throw new ResourceNotFoundException("Execucao nao encontrada para a ordem de servico: " + ordemServicoId);
-        }
-        return buscarExecucao(execucaoId);
-    }
-
-    public synchronized Execucao iniciarDiagnostico(UUID execucaoId, String correlationId) {
+    public Execucao iniciarDiagnostico(UUID execucaoId, String correlationId) {
         var execucao = buscarExecucao(execucaoId);
         var statusAnterior = execucao.status();
         execucao.iniciarDiagnostico(agora());
@@ -237,7 +250,7 @@ public class DynamoDbExecutionStore {
         return execucao;
     }
 
-    public synchronized Execucao concluirDiagnostico(UUID execucaoId, String diagnostico, String correlationId) {
+    public Execucao concluirDiagnostico(UUID execucaoId, String diagnostico, String correlationId) {
         var execucao = buscarExecucao(execucaoId);
         var statusAnterior = execucao.status();
         execucao.concluirDiagnostico(diagnostico, agora());
@@ -245,7 +258,7 @@ public class DynamoDbExecutionStore {
         return execucao;
     }
 
-    public synchronized Execucao iniciarReparo(UUID execucaoId, String correlationId) {
+    public Execucao iniciarReparo(UUID execucaoId, String correlationId) {
         var execucao = buscarExecucao(execucaoId);
         var statusAnterior = execucao.status();
         execucao.iniciarReparo(agora());
@@ -253,7 +266,7 @@ public class DynamoDbExecutionStore {
         return execucao;
     }
 
-    public synchronized Execucao concluirReparo(UUID execucaoId, String observacoes, String correlationId) {
+    public Execucao concluirReparo(UUID execucaoId, String observacoes, String correlationId) {
         var execucao = buscarExecucao(execucaoId);
         var statusAnterior = execucao.status();
         execucao.concluirReparo(observacoes, agora());
@@ -261,24 +274,126 @@ public class DynamoDbExecutionStore {
         return execucao;
     }
 
-    public synchronized Execucao cancelarExecucao(UUID execucaoId, String motivo) {
+    public Execucao cancelarExecucao(UUID execucaoId, String motivo) {
         var execucao = buscarExecucao(execucaoId);
         var statusAnterior = execucao.status();
         execucao.cancelar(motivo, agora());
-        salvarExecucao(execucao);
-        salvarHistorico(execucao, statusAnterior, execucao.status(), "Execucao cancelada", null, execucao.atualizadoEm());
+        var historico = historico(execucao, statusAnterior, execucao.status(), "Execucao cancelada", null, execucao.atualizadoEm());
+        transactPut(toItem(execucao), historico);
         return execucao;
     }
 
-    public synchronized OutboxEventRecord registrarOutbox(
+    public OutboxEventRecord registrarOutbox(
+            String eventType,
+            String topic,
+            String aggregateId,
+            Map<String, Object> payload,
+            String correlationId) {
+        var event = outboxRecord(eventType, topic, aggregateId, payload, correlationId);
+        put(toItem(event));
+        logEvent("outbox event registered", event, "PENDING");
+        return event;
+    }
+
+    public IdempotencyRecord registrarIdempotencia(
+            String scope,
+            String key,
+            String requestHash,
+            Integer responseStatus,
+            String responseBody,
+            ProcessingStatus status) {
+        var agora = agora();
+        var idempotencyRecord = new IdempotencyRecord(scope, key, requestHash, responseStatus, responseBody, status, agora, agora, agora.plusDays(1));
+        put(toItem(idempotencyRecord));
+        return idempotencyRecord;
+    }
+
+    public boolean idempotenciaExiste(String scope, String key) {
+        return getItem(tableNames.idempotencia(), "IDEMPOTENCY#" + scope + "#" + key, "REQUEST").isPresent();
+    }
+
+    public List<DynamoDbItem> catalogoItems() {
+        return scan(tableNames.catalogo());
+    }
+
+    public List<DynamoDbItem> estoqueItems() {
+        return scan(tableNames.estoque());
+    }
+
+    public List<DynamoDbItem> execucaoItems() {
+        return scan(tableNames.execucoes());
+    }
+
+    public List<DynamoDbItem> outboxItems() {
+        return scan(tableNames.outbox());
+    }
+
+    public List<DynamoDbItem> idempotenciaItems() {
+        return scan(tableNames.idempotencia());
+    }
+
+    public List<OutboxEventRecord> outboxEvents() {
+        return outboxItems().stream()
+                .filter(item -> item.entityType().equals("OUTBOX_EVENT"))
+                .map(this::toOutboxEvent)
+                .sorted(Comparator.comparing(OutboxEventRecord::createdAt))
+                .toList();
+    }
+
+    private void salvarServico(Servico servico) {
+        put(toItem(servico));
+    }
+
+    private void salvarPeca(Peca peca) {
+        put(toItem(peca));
+    }
+
+    private void salvarSaldo(Estoque saldo) {
+        put(toItem(saldo));
+    }
+
+    private void salvarExecucaoEEvento(
+            Execucao execucao,
+            StatusExecucao statusAnterior,
+            String descricao,
+            String eventType,
+            String topic,
+            Map<String, Object> payload,
+            String correlationId) {
+        var historico = historico(execucao, statusAnterior, execucao.status(), descricao, null, execucao.atualizadoEm());
+        var outbox = outboxRecord(eventType, topic, execucao.ordemServicoId().toString(), payload, correlationId(correlationId));
+        transactPut(toItem(execucao), historico, toItem(outbox));
+        logEvent("outbox event registered", outbox, "PENDING");
+    }
+
+    private OutboxEventRecord outboxEstoque(MovimentoEstoque movimento, String correlationId) {
+        if (movimento.tipo() == TipoMovimentoEstoque.ENTRADA) {
+            return outboxRecord(
+                    "estoqueAcrescentado",
+                    "oficina.execution.estoque-acrescentado",
+                    movimento.pecaId().toString(),
+                    payloadEstoque(movimento),
+                    correlationId(correlationId));
+        }
+        if (movimento.tipo() == TipoMovimentoEstoque.RESERVA || movimento.tipo() == TipoMovimentoEstoque.CONSUMO) {
+            return outboxRecord(
+                    "estoqueBaixado",
+                    "oficina.execution.estoque-baixado",
+                    movimento.pecaId().toString(),
+                    payloadEstoque(movimento),
+                    correlationId(correlationId));
+        }
+        return null;
+    }
+
+    private OutboxEventRecord outboxRecord(
             String eventType,
             String topic,
             String aggregateId,
             Map<String, Object> payload,
             String correlationId) {
         var agora = agora();
-        var effectiveCorrelationId = correlationId(correlationId);
-        var event = new OutboxEventRecord(
+        return new OutboxEventRecord(
                 UUID.randomUUID(),
                 eventType,
                 1,
@@ -291,97 +406,12 @@ public class DynamoDbExecutionStore {
                 agora,
                 null,
                 null,
-                effectiveCorrelationId,
+                correlationId(correlationId),
                 agora,
                 agora);
-        outbox.put(event.eventId(), event);
-        put(outboxItems, toItem(event));
-        logEvent("outbox event registered", event, "PENDING");
-        return event;
     }
 
-    public synchronized IdempotencyRecord registrarIdempotencia(
-            String scope,
-            String key,
-            String requestHash,
-            Integer responseStatus,
-            String responseBody,
-            ProcessingStatus status) {
-        var agora = agora();
-        var idempotencyRecord = new IdempotencyRecord(scope, key, requestHash, responseStatus, responseBody, status, agora, agora, agora.plusDays(1));
-        idempotencias.put(scope + "#" + key, idempotencyRecord);
-        put(idempotenciaItems, toItem(idempotencyRecord));
-        return idempotencyRecord;
-    }
-
-    public synchronized boolean idempotenciaExiste(String scope, String key) {
-        return idempotencias.containsKey(scope + "#" + key);
-    }
-
-    public synchronized List<DynamoDbItem> catalogoItems() {
-        return List.copyOf(catalogoItems.values());
-    }
-
-    public synchronized List<DynamoDbItem> estoqueItems() {
-        return List.copyOf(estoqueItems.values());
-    }
-
-    public synchronized List<DynamoDbItem> execucaoItems() {
-        return List.copyOf(execucaoItems.values());
-    }
-
-    public synchronized List<DynamoDbItem> outboxItems() {
-        return List.copyOf(outboxItems.values());
-    }
-
-    public synchronized List<DynamoDbItem> idempotenciaItems() {
-        return List.copyOf(idempotenciaItems.values());
-    }
-
-    public synchronized List<OutboxEventRecord> outboxEvents() {
-        return List.copyOf(outbox.values());
-    }
-
-    private void salvarServico(Servico servico) {
-        servicos.put(servico.servicoId(), servico);
-        put(catalogoItems, toItem(servico));
-    }
-
-    private void salvarPeca(Peca peca) {
-        pecas.put(peca.pecaId(), peca);
-        pecaIdsPorCodigo.put(peca.codigo(), peca.pecaId());
-        put(catalogoItems, toItem(peca));
-    }
-
-    private void salvarSaldo(Estoque saldo) {
-        saldos.put(saldo.pecaId(), saldo);
-        put(estoqueItems, toItem(saldo));
-    }
-
-    private void salvarMovimento(MovimentoEstoque movimento) {
-        put(estoqueItems, toItem(movimento));
-    }
-
-    private void salvarExecucaoEEvento(
-            Execucao execucao,
-            StatusExecucao statusAnterior,
-            String descricao,
-            String eventType,
-            String topic,
-            Map<String, Object> payload,
-            String correlationId) {
-        salvarExecucao(execucao);
-        salvarHistorico(execucao, statusAnterior, execucao.status(), descricao, null, execucao.atualizadoEm());
-        registrarOutbox(eventType, topic, execucao.ordemServicoId().toString(), payload, correlationId(correlationId));
-    }
-
-    private void salvarExecucao(Execucao execucao) {
-        execucoes.put(execucao.execucaoId(), execucao);
-        execucaoIdPorOrdemServico.put(execucao.ordemServicoId(), execucao.execucaoId());
-        put(execucaoItems, toItem(execucao));
-    }
-
-    private void salvarHistorico(
+    private DynamoDbItem historico(
             Execucao execucao,
             StatusExecucao statusAnterior,
             StatusExecucao statusNovo,
@@ -389,9 +419,9 @@ public class DynamoDbExecutionStore {
             String sourceEventId,
             OffsetDateTime criadoEm) {
         var historicoId = UUID.randomUUID();
-        put(execucaoItems, new DynamoDbItem(
+        return new DynamoDbItem(
                 tableNames.execucoes(),
-                "EXECUCAO#" + execucao.execucaoId(),
+                KEY_PREFIX_EXECUCAO + execucao.execucaoId(),
                 "HISTORICO#" + criadoEm + "#" + historicoId,
                 "EXECUCAO_HISTORICO",
                 attributes(
@@ -402,27 +432,16 @@ public class DynamoDbExecutionStore {
                         "statusNovo", statusNovo,
                         "descricao", descricao,
                         ATTR_CREATED_AT, criadoEm,
-                        "sourceEventId", sourceEventId)));
+                        "sourceEventId", sourceEventId));
     }
 
-    private void registrarOutboxEstoque(MovimentoEstoque movimento, String correlationId) {
-        if (movimento.tipo() == TipoMovimentoEstoque.ENTRADA) {
-            registrarOutbox(
-                    "estoqueAcrescentado",
-                    "oficina.execution.estoque-acrescentado",
-                    movimento.pecaId().toString(),
-                    payloadEstoque(movimento),
-                    correlationId(correlationId));
-            return;
-        }
-        if (movimento.tipo() == TipoMovimentoEstoque.RESERVA || movimento.tipo() == TipoMovimentoEstoque.CONSUMO) {
-            registrarOutbox(
-                    "estoqueBaixado",
-                    "oficina.execution.estoque-baixado",
-                    movimento.pecaId().toString(),
-                    payloadEstoque(movimento),
-                    correlationId(correlationId));
-        }
+    private Execucao findExecucaoDaOrdemServico(UUID ordemServicoId) {
+        return execucaoItems().stream()
+                .filter(item -> item.entityType().equals("EXECUCAO"))
+                .map(this::toExecucao)
+                .filter(execucao -> execucao.ordemServicoId().equals(ordemServicoId))
+                .findFirst()
+                .orElse(null);
     }
 
     private Map<String, Object> payloadDiagnosticoIniciado(Execucao execucao) {
@@ -475,7 +494,7 @@ public class DynamoDbExecutionStore {
     private DynamoDbItem toItem(Execucao execucao) {
         return new DynamoDbItem(
                 tableNames.execucoes(),
-                "EXECUCAO#" + execucao.execucaoId(),
+                KEY_PREFIX_EXECUCAO + execucao.execucaoId(),
                 SORT_KEY_METADATA,
                 "EXECUCAO",
                 attributes(
@@ -495,7 +514,7 @@ public class DynamoDbExecutionStore {
     private DynamoDbItem toItem(Servico servico) {
         return new DynamoDbItem(
                 tableNames.catalogo(),
-                "SERVICO#" + servico.servicoId(),
+                KEY_PREFIX_SERVICO + servico.servicoId(),
                 SORT_KEY_METADATA,
                 "SERVICO",
                 attributes(
@@ -552,6 +571,7 @@ public class DynamoDbExecutionStore {
                         "tipo", movimento.tipo(),
                         "quantidade", movimento.quantidade(),
                         "motivo", movimento.motivo(),
+                        ATTR_CORRELATION_ID, correlationId(null),
                         ATTR_CREATED_AT, movimento.criadoEm()));
     }
 
@@ -572,6 +592,8 @@ public class DynamoDbExecutionStore {
                         "status", event.status(),
                         "attempts", event.attempts(),
                         "nextAttemptAt", event.nextAttemptAt(),
+                        "publishedAt", event.publishedAt(),
+                        "expiresAt", event.expiresAt(),
                         ATTR_CORRELATION_ID, event.correlationId(),
                         ATTR_CREATED_AT, event.createdAt(),
                         ATTR_UPDATED_AT, event.updatedAt()));
@@ -595,6 +617,79 @@ public class DynamoDbExecutionStore {
                         "expiresAt", idempotencyRecord.expiresAt()));
     }
 
+    private Peca toPeca(DynamoDbItem item) {
+        var peca = new Peca(
+                uuid(item, ATTR_PECA_ID),
+                string(item, "nome"),
+                string(item, "codigo"),
+                decimal(item, "valorUnitario"),
+                offsetDateTime(item, ATTR_CREATED_AT));
+        peca.atualizar(string(item, "nome"), string(item, "codigo"), decimal(item, "valorUnitario"), offsetDateTime(item, ATTR_UPDATED_AT));
+        return peca;
+    }
+
+    private Servico toServico(DynamoDbItem item) {
+        var servico = new Servico(
+                uuid(item, "servicoId"),
+                string(item, "nome"),
+                optionalString(item, "descricao"),
+                decimal(item, "valorBase"),
+                offsetDateTime(item, ATTR_CREATED_AT));
+        servico.atualizar(string(item, "nome"), optionalString(item, "descricao"), decimal(item, "valorBase"), offsetDateTime(item, ATTR_UPDATED_AT));
+        return servico;
+    }
+
+    private Estoque toEstoque(DynamoDbItem item) {
+        return new Estoque(
+                uuid(item, ATTR_PECA_ID),
+                integer(item, "quantidadeDisponivel"),
+                integer(item, "quantidadeReservada"),
+                offsetDateTime(item, ATTR_UPDATED_AT));
+    }
+
+    private MovimentoEstoque toMovimento(DynamoDbItem item) {
+        return new MovimentoEstoque(
+                uuid(item, "movimentoId"),
+                uuid(item, ATTR_PECA_ID),
+                optionalUuid(item, ATTR_ORDEM_SERVICO_ID),
+                TipoMovimentoEstoque.valueOf(string(item, "tipo")),
+                integer(item, "quantidade"),
+                optionalString(item, "motivo"),
+                offsetDateTime(item, ATTR_CREATED_AT));
+    }
+
+    private Execucao toExecucao(DynamoDbItem item) {
+        return Execucao.reconstituir(
+                uuid(item, ATTR_EXECUCAO_ID),
+                uuid(item, ATTR_ORDEM_SERVICO_ID),
+                integer(item, "prioridade"),
+                StatusExecucao.valueOf(string(item, "status")),
+                optionalString(item, "diagnostico"),
+                optionalString(item, "observacoesReparo"),
+                offsetDateTime(item, ATTR_CREATED_AT),
+                offsetDateTime(item, ATTR_UPDATED_AT));
+    }
+
+    @SuppressWarnings("unchecked")
+    private OutboxEventRecord toOutboxEvent(DynamoDbItem item) {
+        return new OutboxEventRecord(
+                uuid(item, "eventId"),
+                string(item, "eventType"),
+                integer(item, "eventVersion"),
+                string(item, "topic"),
+                string(item, "producer"),
+                string(item, "aggregateId"),
+                (Map<String, Object>) item.attributes().getOrDefault("payload", Map.of()),
+                OutboxStatus.valueOf(string(item, "status")),
+                integer(item, "attempts"),
+                optionalOffsetDateTime(item, "nextAttemptAt"),
+                optionalOffsetDateTime(item, "publishedAt"),
+                optionalOffsetDateTime(item, "expiresAt"),
+                string(item, ATTR_CORRELATION_ID),
+                offsetDateTime(item, ATTR_CREATED_AT),
+                offsetDateTime(item, ATTR_UPDATED_AT));
+    }
+
     private Map<String, Object> attributes(Object... entries) {
         var attributes = new LinkedHashMap<String, Object>();
         for (var i = 0; i < entries.length; i += 2) {
@@ -606,13 +701,196 @@ public class DynamoDbExecutionStore {
         return attributes;
     }
 
-    private void put(LinkedHashMap<String, DynamoDbItem> items, DynamoDbItem item) {
-        items.put(item.key(), item);
+    private void put(DynamoDbItem item) {
+        dynamoDbClient.putItem(PutItemRequest.builder()
+                .tableName(item.tableName())
+                .item(toAttributeMap(item))
+                .build());
+    }
+
+    private void transactPut(DynamoDbItem... items) {
+        var transactionItems = new ArrayList<TransactWriteItem>();
+        for (var item : items) {
+            transactionItems.add(TransactWriteItem.builder()
+                    .put(Put.builder()
+                            .tableName(item.tableName())
+                            .item(toAttributeMap(item))
+                            .build())
+                    .build());
+        }
+        dynamoDbClient.transactWriteItems(TransactWriteItemsRequest.builder()
+                .transactItems(transactionItems)
+                .build());
+    }
+
+    private java.util.Optional<DynamoDbItem> getItem(String tableName, String pk, String sk) {
+        var response = dynamoDbClient.getItem(GetItemRequest.builder()
+                .tableName(tableName)
+                .key(Map.of(
+                        ATTR_PK, AttributeValue.fromS(pk),
+                        ATTR_SK, AttributeValue.fromS(sk)))
+                .build());
+        if (!response.hasItem() || response.item().isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(toDynamoDbItem(tableName, response.item()));
+    }
+
+    private List<DynamoDbItem> scan(String tableName) {
+        var items = new ArrayList<DynamoDbItem>();
+        Map<String, AttributeValue> startKey = null;
+        do {
+            var request = ScanRequest.builder()
+                    .tableName(tableName)
+                    .exclusiveStartKey(startKey)
+                    .build();
+            var response = dynamoDbClient.scan(request);
+            response.items().forEach(item -> items.add(toDynamoDbItem(tableName, item)));
+            startKey = response.lastEvaluatedKey();
+        } while (startKey != null && !startKey.isEmpty());
+        return List.copyOf(items);
+    }
+
+    private Map<String, AttributeValue> toAttributeMap(DynamoDbItem item) {
+        var attributes = new LinkedHashMap<String, AttributeValue>();
+        attributes.put(ATTR_PK, AttributeValue.fromS(item.pk()));
+        attributes.put(ATTR_SK, AttributeValue.fromS(item.sk()));
+        attributes.put(ATTR_ENTITY_TYPE, AttributeValue.fromS(item.entityType()));
+        item.attributes().forEach((key, value) -> attributes.put(key, toAttributeValue(value)));
+        return attributes;
+    }
+
+    private AttributeValue toAttributeValue(Object value) {
+        return switch (value) {
+            case String string -> AttributeValue.fromS(string);
+            case UUID uuid -> AttributeValue.fromS(uuid.toString());
+            case OffsetDateTime offsetDateTime -> AttributeValue.fromS(offsetDateTime.toString());
+            case BigDecimal decimal -> AttributeValue.fromN(decimal.toPlainString());
+            case Integer integer -> AttributeValue.fromN(integer.toString());
+            case Long longValue -> AttributeValue.fromN(longValue.toString());
+            case Boolean bool -> AttributeValue.fromBool(bool);
+            case Enum<?> enumValue -> AttributeValue.fromS(enumValue.name());
+            case Map<?, ?> map -> AttributeValue.fromM(mapToAttributeValues(map));
+            case List<?> list -> AttributeValue.fromL(list.stream().map(this::toAttributeValue).toList());
+            default -> AttributeValue.fromS(value.toString());
+        };
+    }
+
+    private Map<String, AttributeValue> mapToAttributeValues(Map<?, ?> map) {
+        var attributes = new LinkedHashMap<String, AttributeValue>();
+        map.forEach((key, value) -> {
+            if (value != null) {
+                attributes.put(key.toString(), toAttributeValue(value));
+            }
+        });
+        return attributes;
+    }
+
+    private DynamoDbItem toDynamoDbItem(String tableName, Map<String, AttributeValue> item) {
+        var attributes = new LinkedHashMap<String, Object>();
+        item.forEach((key, value) -> {
+            if (!ATTR_PK.equals(key) && !ATTR_SK.equals(key) && !ATTR_ENTITY_TYPE.equals(key)) {
+                attributes.put(key, fromAttributeValue(value));
+            }
+        });
+        return new DynamoDbItem(
+                tableName,
+                item.get(ATTR_PK).s(),
+                item.get(ATTR_SK).s(),
+                item.get(ATTR_ENTITY_TYPE).s(),
+                attributes);
+    }
+
+    private Object fromAttributeValue(AttributeValue value) {
+        if (value.s() != null) {
+            return value.s();
+        }
+        if (value.n() != null) {
+            return number(value.n());
+        }
+        if (value.bool() != null) {
+            return value.bool();
+        }
+        if (value.hasM()) {
+            var map = new LinkedHashMap<String, Object>();
+            value.m().forEach((key, nested) -> map.put(key, fromAttributeValue(nested)));
+            return map;
+        }
+        if (value.hasL()) {
+            return value.l().stream().map(this::fromAttributeValue).toList();
+        }
+        return null;
+    }
+
+    private Object number(String value) {
+        var decimal = new BigDecimal(value);
+        if (decimal.scale() <= 0) {
+            try {
+                return decimal.intValueExact();
+            } catch (ArithmeticException _) {
+                return decimal.longValueExact();
+            }
+        }
+        return decimal;
+    }
+
+    private UUID uuid(DynamoDbItem item, String name) {
+        return UUID.fromString(string(item, name));
+    }
+
+    private UUID optionalUuid(DynamoDbItem item, String name) {
+        var value = optionalString(item, name);
+        return value == null ? null : UUID.fromString(value);
+    }
+
+    private String string(DynamoDbItem item, String name) {
+        var value = item.attributes().get(name);
+        if (value == null) {
+            throw new IllegalStateException("Atributo DynamoDB obrigatorio ausente: " + name);
+        }
+        return value.toString();
+    }
+
+    private String optionalString(DynamoDbItem item, String name) {
+        var value = item.attributes().get(name);
+        return value == null ? null : value.toString();
+    }
+
+    private BigDecimal decimal(DynamoDbItem item, String name) {
+        var value = item.attributes().get(name);
+        BigDecimal decimal;
+        if (value instanceof BigDecimal monetaryValue) {
+            return monetaryValue.scale() < 2 ? monetaryValue.setScale(2) : monetaryValue;
+        }
+        if (value instanceof Number number) {
+            decimal = BigDecimal.valueOf(number.longValue());
+        } else {
+            decimal = new BigDecimal(value.toString());
+        }
+        return decimal.scale() < 2 ? decimal.setScale(2) : decimal;
+    }
+
+    private int integer(DynamoDbItem item, String name) {
+        var value = item.attributes().get(name);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return Integer.parseInt(value.toString());
+    }
+
+    private OffsetDateTime offsetDateTime(DynamoDbItem item, String name) {
+        return OffsetDateTime.parse(string(item, name));
+    }
+
+    private OffsetDateTime optionalOffsetDateTime(DynamoDbItem item, String name) {
+        var value = optionalString(item, name);
+        return value == null ? null : OffsetDateTime.parse(value);
     }
 
     private void exigirCodigoDisponivel(String codigo, UUID pecaAtualId) {
-        var pecaIdExistente = pecaIdsPorCodigo.get(codigo);
-        if (pecaIdExistente != null && !pecaIdExistente.equals(pecaAtualId)) {
+        var codigoIndisponivel = listarPecas().stream()
+                .anyMatch(peca -> peca.codigo().equals(codigo) && !peca.pecaId().equals(pecaAtualId));
+        if (codigoIndisponivel) {
             throw new BusinessConflictException("Codigo de peca ja cadastrado: " + codigo);
         }
     }
