@@ -2,13 +2,18 @@ package br.com.oficina.execution.framework.messaging;
 
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
+import br.com.oficina.execution.framework.observability.StructuredLog;
 import jakarta.enterprise.context.ApplicationScoped;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.jboss.logging.Logger;
 
 @ApplicationScoped
 public class ExecutionEventConsumer {
+    private static final Logger LOG = Logger.getLogger(ExecutionEventConsumer.class);
     private static final String SCOPE = "event-consumer";
+    private static final String CONSUMER = "oficina-execution-service";
     private static final Set<String> EVENTOS_CONSUMIDOS = Set.of(
             "ordemDeServicoCriada",
             "pecaIncluidaNaOrdemDeServico",
@@ -29,12 +34,17 @@ public class ExecutionEventConsumer {
             throw new IllegalArgumentException("Evento nao consumido pelo oficina-execution-service: " + envelope.eventType());
         }
         var key = envelope.eventId().toString();
+        var correlationId = correlationId(envelope);
         if (store.idempotenciaExiste(SCOPE, key)) {
+            logEvent("domain event ignored", envelope, "DUPLICATE", correlationId);
             return false;
         }
-        store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.PROCESSING);
-        aplicarEvento(envelope);
-        store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.COMPLETED);
+        StructuredLog.withFields(eventFields(envelope, "PROCESSING", correlationId), () -> {
+            store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.PROCESSING);
+            aplicarEvento(envelope);
+            store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.COMPLETED);
+        });
+        logEvent("domain event consumed", envelope, "CONSUMED", correlationId);
         return true;
     }
 
@@ -75,5 +85,25 @@ public class ExecutionEventConsumer {
 
     private UUID toUuid(Object value) {
         return value instanceof UUID uuid ? uuid : UUID.fromString(value.toString());
+    }
+
+    private void logEvent(String message, DomainEventEnvelope envelope, String messageStatus, String correlationId) {
+        StructuredLog.info(LOG, message, eventFields(envelope, messageStatus, correlationId));
+    }
+
+    private Map<String, Object> eventFields(DomainEventEnvelope envelope, String messageStatus, String correlationId) {
+        return Map.of(
+                "correlationId", correlationId,
+                "eventId", envelope.eventId().toString(),
+                "eventType", envelope.eventType(),
+                "eventVersion", envelope.eventVersion(),
+                "producer", envelope.producer(),
+                "consumer", CONSUMER,
+                "aggregateId", envelope.aggregateId(),
+                "messageStatus", messageStatus);
+    }
+
+    private String correlationId(DomainEventEnvelope envelope) {
+        return envelope.eventId().toString();
     }
 }

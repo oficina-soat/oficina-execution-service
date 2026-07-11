@@ -9,6 +9,7 @@ import br.com.oficina.execution.core.entities.execucao.Execucao;
 import br.com.oficina.execution.core.entities.execucao.StatusExecucao;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import br.com.oficina.execution.framework.dynamodb.OutboxEventRecord.OutboxStatus;
+import br.com.oficina.execution.framework.observability.StructuredLog;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.WebApplicationException;
@@ -22,9 +23,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.jboss.logging.Logger;
+import org.jboss.logging.MDC;
 
 @ApplicationScoped
 public class DynamoDbExecutionStore {
+    private static final Logger LOG = Logger.getLogger(DynamoDbExecutionStore.class);
+    private static final String PRODUCER = "oficina-execution-service";
     public static final UUID SEED_PECA_ID = UUID.fromString("19fdd9ab-cf1f-4074-a96b-80ae86fba7b0");
     public static final UUID SEED_PNEU_ID = UUID.fromString("9fc69d25-1ed0-40dd-a02f-4c37e41f0bd6");
     public static final UUID SEED_TAPETE_ID = UUID.fromString("e522d846-12fb-4c42-8a68-914f4cb5a044");
@@ -272,12 +277,13 @@ public class DynamoDbExecutionStore {
             Map<String, Object> payload,
             String correlationId) {
         var agora = agora();
+        var effectiveCorrelationId = correlationId(correlationId);
         var event = new OutboxEventRecord(
                 UUID.randomUUID(),
                 eventType,
                 1,
                 topic,
-                "oficina-execution-service",
+                PRODUCER,
                 aggregateId,
                 payload,
                 OutboxStatus.PENDING,
@@ -285,11 +291,12 @@ public class DynamoDbExecutionStore {
                 agora,
                 null,
                 null,
-                correlationId,
+                effectiveCorrelationId,
                 agora,
                 agora);
         outbox.put(event.eventId(), event);
         put(outboxItems, toItem(event));
+        logEvent("outbox event registered", event, "PENDING");
         return event;
     }
 
@@ -642,7 +649,26 @@ public class DynamoDbExecutionStore {
     }
 
     private String correlationId(String correlationId) {
-        return correlationId == null || correlationId.isBlank() ? "local-" + UUID.randomUUID() : correlationId.trim();
+        if (correlationId != null && !correlationId.isBlank()) {
+            return correlationId.trim();
+        }
+        var mdcCorrelationId = MDC.get("correlationId");
+        if (mdcCorrelationId != null && !mdcCorrelationId.toString().isBlank()) {
+            return mdcCorrelationId.toString();
+        }
+        return "local-" + UUID.randomUUID();
+    }
+
+    private void logEvent(String message, OutboxEventRecord event, String messageStatus) {
+        StructuredLog.info(LOG, message, Map.of(
+                "correlationId", event.correlationId(),
+                "eventId", event.eventId().toString(),
+                "eventType", event.eventType(),
+                "eventVersion", event.eventVersion(),
+                "topic", event.topic(),
+                "producer", event.producer(),
+                "aggregateId", event.aggregateId(),
+                "messageStatus", messageStatus));
     }
 
     private OffsetDateTime agora() {
