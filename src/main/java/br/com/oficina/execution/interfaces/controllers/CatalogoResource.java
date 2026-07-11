@@ -27,8 +27,12 @@ import java.util.UUID;
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
 public class CatalogoResource {
+    private final DynamoDbExecutionStore store;
+
     @Inject
-    DynamoDbExecutionStore store;
+    public CatalogoResource(DynamoDbExecutionStore store) {
+        this.store = store;
+    }
 
     @POST
     @Path("servicos")

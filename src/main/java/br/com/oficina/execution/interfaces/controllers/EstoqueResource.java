@@ -28,8 +28,12 @@ import java.util.UUID;
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
 public class EstoqueResource {
+    private final DynamoDbExecutionStore store;
+
     @Inject
-    DynamoDbExecutionStore store;
+    public EstoqueResource(DynamoDbExecutionStore store) {
+        this.store = store;
+    }
 
     @GET
     @Path("pecas/{pecaId}/saldo")

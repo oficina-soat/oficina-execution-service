@@ -32,19 +32,19 @@ public record OutboxEventRecord(
         if (eventId == null) {
             throw new IllegalArgumentException("eventId da Outbox e obrigatorio.");
         }
-        if (eventType == null || eventType.isBlank()) {
+        if (isBlank(eventType)) {
             throw new IllegalArgumentException("eventType da Outbox e obrigatorio.");
         }
         if (eventVersion <= 0) {
             throw new IllegalArgumentException("eventVersion da Outbox deve ser positivo.");
         }
-        if (topic == null || topic.isBlank()) {
+        if (isBlank(topic)) {
             throw new IllegalArgumentException("Topico da Outbox e obrigatorio.");
         }
-        if (producer == null || producer.isBlank()) {
+        if (isBlank(producer)) {
             throw new IllegalArgumentException("Producer da Outbox e obrigatorio.");
         }
-        if (aggregateId == null || aggregateId.isBlank()) {
+        if (isBlank(aggregateId)) {
             throw new IllegalArgumentException("aggregateId da Outbox e obrigatorio.");
         }
         if (status == null) {
@@ -53,12 +53,16 @@ public record OutboxEventRecord(
         if (attempts < 0) {
             throw new IllegalArgumentException("Tentativas da Outbox nao podem ser negativas.");
         }
-        if (correlationId == null || correlationId.isBlank()) {
+        if (isBlank(correlationId)) {
             throw new IllegalArgumentException("correlationId da Outbox e obrigatorio.");
         }
         if (createdAt == null || updatedAt == null) {
             throw new IllegalArgumentException("Datas da Outbox sao obrigatorias.");
         }
         payload = Map.copyOf(payload == null ? Map.of() : new LinkedHashMap<>(payload));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

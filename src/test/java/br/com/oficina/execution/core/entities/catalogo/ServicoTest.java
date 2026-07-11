@@ -11,16 +11,18 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ServicoTest {
+    private static final OffsetDateTime CRIADA_EM = OffsetDateTime.of(2026, 6, 23, 15, 30, 0, 0, ZoneOffset.UTC);
+    private static final BigDecimal VALOR_INVALIDO = new BigDecimal("-1");
+
     @Test
     void deveCriarEAtualizarServico() {
-        var criadaEm = OffsetDateTime.of(2026, 6, 23, 15, 30, 0, 0, ZoneOffset.UTC);
-        var servico = new Servico(UUID.randomUUID(), "Troca de oleo", "Substituicao", new BigDecimal("250.00"), criadaEm);
+        var servico = new Servico(UUID.randomUUID(), "Troca de oleo", "Substituicao", new BigDecimal("250.00"), CRIADA_EM);
 
         assertEquals("Troca de oleo", servico.nome());
         assertEquals("Substituicao", servico.descricao());
         assertEquals(new BigDecimal("250.00"), servico.valorBase());
 
-        var atualizadaEm = criadaEm.plusHours(1);
+        var atualizadaEm = CRIADA_EM.plusHours(1);
         servico.atualizar("Alinhamento", " ", new BigDecimal("150.00"), atualizadaEm);
 
         assertEquals("Alinhamento", servico.nome());
@@ -31,13 +33,15 @@ class ServicoTest {
 
     @Test
     void deveRejeitarServicoInvalido() {
+        assertServicoInvalido(" ", BigDecimal.ONE);
+        assertServicoInvalido(null, BigDecimal.ONE);
+        assertServicoInvalido("Troca", VALOR_INVALIDO);
+        assertServicoInvalido("Troca", null);
+    }
+
+    private void assertServicoInvalido(String nome, BigDecimal valorBase) {
+        var servicoId = UUID.randomUUID();
         assertThrows(IllegalArgumentException.class,
-                () -> new Servico(UUID.randomUUID(), " ", null, BigDecimal.ONE, OffsetDateTime.now()));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Servico(UUID.randomUUID(), null, null, BigDecimal.ONE, OffsetDateTime.now()));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Servico(UUID.randomUUID(), "Troca", null, new BigDecimal("-1"), OffsetDateTime.now()));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Servico(UUID.randomUUID(), "Troca", null, null, OffsetDateTime.now()));
+                () -> new Servico(servicoId, nome, null, valorBase, CRIADA_EM));
     }
 }
