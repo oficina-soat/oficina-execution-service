@@ -7,13 +7,12 @@ import br.com.oficina.execution.core.entities.estoque.MovimentoEstoque;
 import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
 import br.com.oficina.execution.core.entities.execucao.Execucao;
 import br.com.oficina.execution.core.entities.execucao.StatusExecucao;
+import br.com.oficina.execution.core.exceptions.BusinessConflictException;
+import br.com.oficina.execution.core.exceptions.ResourceNotFoundException;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import br.com.oficina.execution.framework.dynamodb.OutboxEventRecord.OutboxStatus;
 import br.com.oficina.execution.framework.observability.StructuredLog;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.Response;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -93,7 +92,7 @@ public class DynamoDbExecutionStore {
     public synchronized Servico buscarServico(UUID servicoId) {
         var servico = servicos.get(servicoId);
         if (servico == null) {
-            throw new NotFoundException("Servico nao encontrado: " + servicoId);
+            throw new ResourceNotFoundException("Servico nao encontrado: " + servicoId);
         }
         return servico;
     }
@@ -124,7 +123,7 @@ public class DynamoDbExecutionStore {
     public synchronized Peca buscarPeca(UUID pecaId) {
         var peca = pecas.get(pecaId);
         if (peca == null) {
-            throw new NotFoundException("Peca nao encontrada: " + pecaId);
+            throw new ResourceNotFoundException("Peca nao encontrada: " + pecaId);
         }
         return peca;
     }
@@ -185,7 +184,7 @@ public class DynamoDbExecutionStore {
             throw new IllegalArgumentException("ordemServicoId e obrigatorio.");
         }
         if (execucaoIdPorOrdemServico.containsKey(ordemServicoId)) {
-            throw new WebApplicationException("Ja existe execucao para a ordem de servico: " + ordemServicoId, Response.Status.CONFLICT);
+            throw new BusinessConflictException("Ja existe execucao para a ordem de servico: " + ordemServicoId);
         }
         var agora = agora();
         var execucao = new Execucao(UUID.randomUUID(), ordemServicoId, prioridadeOuPadrao(prioridade), agora);
@@ -216,7 +215,7 @@ public class DynamoDbExecutionStore {
     public synchronized Execucao buscarExecucao(UUID execucaoId) {
         var execucao = execucoes.get(execucaoId);
         if (execucao == null) {
-            throw new NotFoundException("Execucao nao encontrada: " + execucaoId);
+            throw new ResourceNotFoundException("Execucao nao encontrada: " + execucaoId);
         }
         return execucao;
     }
@@ -224,7 +223,7 @@ public class DynamoDbExecutionStore {
     public synchronized Execucao buscarExecucaoDaOrdemServico(UUID ordemServicoId) {
         var execucaoId = execucaoIdPorOrdemServico.get(ordemServicoId);
         if (execucaoId == null) {
-            throw new NotFoundException("Execucao nao encontrada para a ordem de servico: " + ordemServicoId);
+            throw new ResourceNotFoundException("Execucao nao encontrada para a ordem de servico: " + ordemServicoId);
         }
         return buscarExecucao(execucaoId);
     }
@@ -613,7 +612,7 @@ public class DynamoDbExecutionStore {
     private void exigirCodigoDisponivel(String codigo, UUID pecaAtualId) {
         var pecaIdExistente = pecaIdsPorCodigo.get(codigo);
         if (pecaIdExistente != null && !pecaIdExistente.equals(pecaAtualId)) {
-            throw new WebApplicationException("Codigo de peca ja cadastrado: " + codigo, Response.Status.CONFLICT);
+            throw new BusinessConflictException("Codigo de peca ja cadastrado: " + codigo);
         }
     }
 

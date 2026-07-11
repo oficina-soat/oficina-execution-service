@@ -1,7 +1,6 @@
 package br.com.oficina.execution.core.entities.estoque;
 
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.Response;
+import br.com.oficina.execution.core.exceptions.BusinessConflictException;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -75,13 +74,13 @@ public final class Estoque {
 
     private void exigirDisponivel(int quantidade) {
         if (quantidadeDisponivel < quantidade) {
-            throw new WebApplicationException("Saldo de estoque insuficiente para a peca: " + pecaId, Response.Status.CONFLICT);
+            throw new BusinessConflictException("Saldo de estoque insuficiente para a peca: " + pecaId);
         }
     }
 
     private void exigirReservado(int quantidade) {
         if (quantidadeReservada < quantidade) {
-            throw new WebApplicationException("Saldo reservado insuficiente para a peca: " + pecaId, Response.Status.CONFLICT);
+            throw new BusinessConflictException("Saldo reservado insuficiente para a peca: " + pecaId);
         }
     }
 

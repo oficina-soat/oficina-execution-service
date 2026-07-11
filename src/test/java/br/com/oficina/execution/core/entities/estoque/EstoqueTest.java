@@ -3,7 +3,7 @@ package br.com.oficina.execution.core.entities.estoque;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import jakarta.ws.rs.WebApplicationException;
+import br.com.oficina.execution.core.exceptions.BusinessConflictException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -60,9 +60,9 @@ class EstoqueTest {
         var reservaOrdemServicoId = UUID.randomUUID();
         var consumoOrdemServicoId = UUID.randomUUID();
 
-        assertThrows(WebApplicationException.class,
+        assertThrows(BusinessConflictException.class,
                 () -> estoque.registrar(TipoMovimentoEstoque.RESERVA, 2, reservaOrdemServicoId, null, AGORA));
-        assertThrows(WebApplicationException.class,
+        assertThrows(BusinessConflictException.class,
                 () -> estoque.registrar(TipoMovimentoEstoque.CONSUMO, 1, consumoOrdemServicoId, null, AGORA));
     }
 
