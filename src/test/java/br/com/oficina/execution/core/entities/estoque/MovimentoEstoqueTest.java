@@ -9,6 +9,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class MovimentoEstoqueTest {
+    private static final OffsetDateTime CRIADO_EM = OffsetDateTime.parse("2026-06-23T15:30:00Z");
+
     @Test
     void deveNormalizarMotivoVazio() {
         var movimento = new MovimentoEstoque(
@@ -18,7 +20,7 @@ class MovimentoEstoqueTest {
                 TipoMovimentoEstoque.ENTRADA,
                 1,
                 " ",
-                OffsetDateTime.now());
+                CRIADO_EM);
 
         assertNull(movimento.motivo());
     }
@@ -28,7 +30,7 @@ class MovimentoEstoqueTest {
         var movimentoId = UUID.randomUUID();
         var pecaId = UUID.randomUUID();
         var ordemServicoId = UUID.randomUUID();
-        var criadoEm = OffsetDateTime.now();
+        var criadoEm = CRIADO_EM;
         var movimento = new MovimentoEstoque(
                 movimentoId,
                 pecaId,
@@ -49,15 +51,20 @@ class MovimentoEstoqueTest {
 
     @Test
     void deveRejeitarMovimentoInvalido() {
+        assertMovimentoInvalido(null, UUID.randomUUID(), TipoMovimentoEstoque.ENTRADA, 1, CRIADO_EM);
+        assertMovimentoInvalido(UUID.randomUUID(), null, TipoMovimentoEstoque.ENTRADA, 1, CRIADO_EM);
+        assertMovimentoInvalido(UUID.randomUUID(), UUID.randomUUID(), null, 1, CRIADO_EM);
+        assertMovimentoInvalido(UUID.randomUUID(), UUID.randomUUID(), TipoMovimentoEstoque.ENTRADA, 0, CRIADO_EM);
+        assertMovimentoInvalido(UUID.randomUUID(), UUID.randomUUID(), TipoMovimentoEstoque.ENTRADA, 1, null);
+    }
+
+    private void assertMovimentoInvalido(
+            UUID movimentoId,
+            UUID pecaId,
+            TipoMovimentoEstoque tipo,
+            int quantidade,
+            OffsetDateTime criadoEm) {
         assertThrows(IllegalArgumentException.class,
-                () -> new MovimentoEstoque(null, UUID.randomUUID(), null, TipoMovimentoEstoque.ENTRADA, 1, null, OffsetDateTime.now()));
-        assertThrows(IllegalArgumentException.class,
-                () -> new MovimentoEstoque(UUID.randomUUID(), null, null, TipoMovimentoEstoque.ENTRADA, 1, null, OffsetDateTime.now()));
-        assertThrows(IllegalArgumentException.class,
-                () -> new MovimentoEstoque(UUID.randomUUID(), UUID.randomUUID(), null, null, 1, null, OffsetDateTime.now()));
-        assertThrows(IllegalArgumentException.class,
-                () -> new MovimentoEstoque(UUID.randomUUID(), UUID.randomUUID(), null, TipoMovimentoEstoque.ENTRADA, 0, null, OffsetDateTime.now()));
-        assertThrows(IllegalArgumentException.class,
-                () -> new MovimentoEstoque(UUID.randomUUID(), UUID.randomUUID(), null, TipoMovimentoEstoque.ENTRADA, 1, null, null));
+                () -> new MovimentoEstoque(movimentoId, pecaId, null, tipo, quantidade, null, criadoEm));
     }
 }

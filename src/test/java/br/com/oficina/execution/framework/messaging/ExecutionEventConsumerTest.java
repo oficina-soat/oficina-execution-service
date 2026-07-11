@@ -1,6 +1,7 @@
 package br.com.oficina.execution.framework.messaging;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,7 +25,8 @@ class ExecutionEventConsumerTest {
 
         assertTrue(consumer.consumir(envelope));
         assertFalse(consumer.consumir(envelope));
-        assertTrue(store.buscarExecucaoDaOrdemServico(ordemServicoId).execucaoId() != null);
+        var execucao = store.buscarExecucaoDaOrdemServico(ordemServicoId);
+        assertNotNull(execucao.execucaoId());
     }
 
     @Test

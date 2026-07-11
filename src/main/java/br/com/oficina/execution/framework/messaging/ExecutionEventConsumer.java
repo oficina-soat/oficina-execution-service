@@ -55,7 +55,7 @@ public class ExecutionEventConsumer {
         try {
             var execucao = store.buscarExecucaoDaOrdemServico(ordemServicoId(envelope));
             store.cancelarExecucao(execucao.execucaoId(), "Saga compensada");
-        } catch (jakarta.ws.rs.NotFoundException ignored) {
+        } catch (jakarta.ws.rs.NotFoundException _) {
             // A compensacao pode chegar antes de existir contexto local de execucao.
         }
     }

@@ -30,6 +30,14 @@ public class DynamoDbExecutionStore {
     public static final UUID SEED_TAPETE_ID = UUID.fromString("e522d846-12fb-4c42-8a68-914f4cb5a044");
     public static final UUID SEED_SERVICO_ID = UUID.fromString("b96e7e7f-b1f7-4c55-b42a-61c53ab06caa");
     public static final UUID SEED_ORDEM_SERVICO_ID = UUID.fromString("d290f1ee-6c54-4b01-90e6-d701748f0851");
+    private static final String ATTR_EXECUCAO_ID = "execucaoId";
+    private static final String ATTR_ORDEM_SERVICO_ID = "ordemServicoId";
+    private static final String ATTR_STATUS_EXECUCAO = "statusExecucao";
+    private static final String ATTR_PECA_ID = "pecaId";
+    private static final String ATTR_CREATED_AT = "createdAt";
+    private static final String ATTR_UPDATED_AT = "updatedAt";
+    private static final String SORT_KEY_METADATA = "METADATA";
+    private static final String KEY_PREFIX_PECA = "PECA#";
 
     private final DynamoDbTableNames tableNames;
     private final LinkedHashMap<UUID, Peca> pecas = new LinkedHashMap<>();
@@ -293,10 +301,10 @@ public class DynamoDbExecutionStore {
             String responseBody,
             ProcessingStatus status) {
         var agora = agora();
-        var record = new IdempotencyRecord(scope, key, requestHash, responseStatus, responseBody, status, agora, agora, agora.plusDays(1));
-        idempotencias.put(scope + "#" + key, record);
-        put(idempotenciaItems, toItem(record));
-        return record;
+        var idempotencyRecord = new IdempotencyRecord(scope, key, requestHash, responseStatus, responseBody, status, agora, agora, agora.plusDays(1));
+        idempotencias.put(scope + "#" + key, idempotencyRecord);
+        put(idempotenciaItems, toItem(idempotencyRecord));
+        return idempotencyRecord;
     }
 
     public synchronized boolean idempotenciaExiste(String scope, String key) {
@@ -381,12 +389,12 @@ public class DynamoDbExecutionStore {
                 "EXECUCAO_HISTORICO",
                 attributes(
                         "historicoId", historicoId,
-                        "execucaoId", execucao.execucaoId(),
-                        "ordemServicoId", execucao.ordemServicoId(),
+                        ATTR_EXECUCAO_ID, execucao.execucaoId(),
+                        ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
                         "statusAnterior", statusAnterior,
                         "statusNovo", statusNovo,
                         "descricao", descricao,
-                        "createdAt", criadoEm,
+                        ATTR_CREATED_AT, criadoEm,
                         "sourceEventId", sourceEventId)));
     }
 
@@ -412,17 +420,17 @@ public class DynamoDbExecutionStore {
 
     private Map<String, Object> payloadDiagnosticoIniciado(Execucao execucao) {
         return attributes(
-                "execucaoId", execucao.execucaoId(),
-                "ordemServicoId", execucao.ordemServicoId(),
-                "statusExecucao", execucao.status(),
+                ATTR_EXECUCAO_ID, execucao.execucaoId(),
+                ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
+                ATTR_STATUS_EXECUCAO, execucao.status(),
                 "iniciadoEm", execucao.atualizadoEm());
     }
 
     private Map<String, Object> payloadDiagnosticoFinalizado(Execucao execucao) {
         return attributes(
-                "execucaoId", execucao.execucaoId(),
-                "ordemServicoId", execucao.ordemServicoId(),
-                "statusExecucao", execucao.status(),
+                ATTR_EXECUCAO_ID, execucao.execucaoId(),
+                ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
+                ATTR_STATUS_EXECUCAO, execucao.status(),
                 "diagnostico", execucao.diagnostico(),
                 "servicos", List.of(),
                 "pecas", List.of(),
@@ -431,17 +439,17 @@ public class DynamoDbExecutionStore {
 
     private Map<String, Object> payloadExecucaoIniciada(Execucao execucao) {
         return attributes(
-                "execucaoId", execucao.execucaoId(),
-                "ordemServicoId", execucao.ordemServicoId(),
-                "statusExecucao", execucao.status(),
+                ATTR_EXECUCAO_ID, execucao.execucaoId(),
+                ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
+                ATTR_STATUS_EXECUCAO, execucao.status(),
                 "iniciadaEm", execucao.atualizadoEm());
     }
 
     private Map<String, Object> payloadExecucaoFinalizada(Execucao execucao) {
         return attributes(
-                "execucaoId", execucao.execucaoId(),
-                "ordemServicoId", execucao.ordemServicoId(),
-                "statusExecucao", execucao.status(),
+                ATTR_EXECUCAO_ID, execucao.execucaoId(),
+                ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
+                ATTR_STATUS_EXECUCAO, execucao.status(),
                 "observacoes", execucao.observacoesReparo(),
                 "finalizadaEm", execucao.atualizadoEm());
     }
@@ -449,8 +457,8 @@ public class DynamoDbExecutionStore {
     private Map<String, Object> payloadEstoque(MovimentoEstoque movimento) {
         return attributes(
                 "movimentoId", movimento.movimentoId(),
-                "pecaId", movimento.pecaId(),
-                "ordemServicoId", movimento.ordemServicoId(),
+                ATTR_PECA_ID, movimento.pecaId(),
+                ATTR_ORDEM_SERVICO_ID, movimento.ordemServicoId(),
                 "tipo", movimento.tipo(),
                 "quantidade", movimento.quantidade(),
                 "observacao", movimento.motivo(),
@@ -461,17 +469,17 @@ public class DynamoDbExecutionStore {
         return new DynamoDbItem(
                 tableNames.execucoes(),
                 "EXECUCAO#" + execucao.execucaoId(),
-                "METADATA",
+                SORT_KEY_METADATA,
                 "EXECUCAO",
                 attributes(
-                        "execucaoId", execucao.execucaoId(),
-                        "ordemServicoId", execucao.ordemServicoId(),
+                        ATTR_EXECUCAO_ID, execucao.execucaoId(),
+                        ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
                         "status", execucao.status(),
                         "prioridade", execucao.prioridade(),
                         "diagnostico", execucao.diagnostico(),
                         "observacoesReparo", execucao.observacoesReparo(),
-                        "createdAt", execucao.criadoEm(),
-                        "updatedAt", execucao.atualizadoEm(),
+                        ATTR_CREATED_AT, execucao.criadoEm(),
+                        ATTR_UPDATED_AT, execucao.atualizadoEm(),
                         "correlationId", "local",
                         "filaStatus", filaStatus(execucao),
                         "prioridadeCriadoEm", prioridadeCriadoEm(execucao)));
@@ -481,7 +489,7 @@ public class DynamoDbExecutionStore {
         return new DynamoDbItem(
                 tableNames.catalogo(),
                 "SERVICO#" + servico.servicoId(),
-                "METADATA",
+                SORT_KEY_METADATA,
                 "SERVICO",
                 attributes(
                         "servicoId", servico.servicoId(),
@@ -490,54 +498,54 @@ public class DynamoDbExecutionStore {
                         "descricao", servico.descricao(),
                         "valorBase", servico.valorBase(),
                         "ativo", servico.ativo(),
-                        "createdAt", servico.criadoEm(),
-                        "updatedAt", servico.atualizadoEm()));
+                        ATTR_CREATED_AT, servico.criadoEm(),
+                        ATTR_UPDATED_AT, servico.atualizadoEm()));
     }
 
     private DynamoDbItem toItem(Peca peca) {
         return new DynamoDbItem(
                 tableNames.catalogo(),
-                "PECA#" + peca.pecaId(),
-                "METADATA",
+                KEY_PREFIX_PECA + peca.pecaId(),
+                SORT_KEY_METADATA,
                 "PECA",
                 attributes(
-                        "pecaId", peca.pecaId(),
+                        ATTR_PECA_ID, peca.pecaId(),
                         "nome", peca.nome(),
                         "nomeNormalizado", peca.nome().toUpperCase(),
                         "codigo", peca.codigo(),
                         "valorUnitario", peca.valorUnitario(),
                         "ativo", peca.ativo(),
-                        "createdAt", peca.criadoEm(),
-                        "updatedAt", peca.atualizadoEm()));
+                        ATTR_CREATED_AT, peca.criadoEm(),
+                        ATTR_UPDATED_AT, peca.atualizadoEm()));
     }
 
     private DynamoDbItem toItem(Estoque saldo) {
         return new DynamoDbItem(
                 tableNames.estoque(),
-                "PECA#" + saldo.pecaId(),
+                KEY_PREFIX_PECA + saldo.pecaId(),
                 "SALDO",
                 "ESTOQUE_SALDO",
                 attributes(
-                        "pecaId", saldo.pecaId(),
+                        ATTR_PECA_ID, saldo.pecaId(),
                         "quantidadeDisponivel", saldo.quantidadeDisponivel(),
                         "quantidadeReservada", saldo.quantidadeReservada(),
-                        "updatedAt", saldo.atualizadoEm()));
+                        ATTR_UPDATED_AT, saldo.atualizadoEm()));
     }
 
     private DynamoDbItem toItem(MovimentoEstoque movimento) {
         return new DynamoDbItem(
                 tableNames.estoque(),
-                "PECA#" + movimento.pecaId(),
+                KEY_PREFIX_PECA + movimento.pecaId(),
                 "MOVIMENTO#" + movimento.criadoEm() + "#" + movimento.movimentoId(),
                 "ESTOQUE_MOVIMENTO",
                 attributes(
                         "movimentoId", movimento.movimentoId(),
-                        "pecaId", movimento.pecaId(),
-                        "ordemServicoId", movimento.ordemServicoId(),
+                        ATTR_PECA_ID, movimento.pecaId(),
+                        ATTR_ORDEM_SERVICO_ID, movimento.ordemServicoId(),
                         "tipo", movimento.tipo(),
                         "quantidade", movimento.quantidade(),
                         "motivo", movimento.motivo(),
-                        "createdAt", movimento.criadoEm()));
+                        ATTR_CREATED_AT, movimento.criadoEm()));
     }
 
     private DynamoDbItem toItem(OutboxEventRecord event) {
@@ -558,26 +566,26 @@ public class DynamoDbExecutionStore {
                         "attempts", event.attempts(),
                         "nextAttemptAt", event.nextAttemptAt(),
                         "correlationId", event.correlationId(),
-                        "createdAt", event.createdAt(),
-                        "updatedAt", event.updatedAt()));
+                        ATTR_CREATED_AT, event.createdAt(),
+                        ATTR_UPDATED_AT, event.updatedAt()));
     }
 
-    private DynamoDbItem toItem(IdempotencyRecord record) {
+    private DynamoDbItem toItem(IdempotencyRecord idempotencyRecord) {
         return new DynamoDbItem(
                 tableNames.idempotencia(),
-                "IDEMPOTENCY#" + record.scope() + "#" + record.key(),
+                "IDEMPOTENCY#" + idempotencyRecord.scope() + "#" + idempotencyRecord.key(),
                 "REQUEST",
                 "IDEMPOTENCY",
                 attributes(
-                        "scope", record.scope(),
-                        "key", record.key(),
-                        "requestHash", record.requestHash(),
-                        "responseStatus", record.responseStatus(),
-                        "responseBody", record.responseBody(),
-                        "processingStatus", record.processingStatus(),
-                        "createdAt", record.createdAt(),
-                        "updatedAt", record.updatedAt(),
-                        "expiresAt", record.expiresAt()));
+                        "scope", idempotencyRecord.scope(),
+                        "key", idempotencyRecord.key(),
+                        "requestHash", idempotencyRecord.requestHash(),
+                        "responseStatus", idempotencyRecord.responseStatus(),
+                        "responseBody", idempotencyRecord.responseBody(),
+                        "processingStatus", idempotencyRecord.processingStatus(),
+                        ATTR_CREATED_AT, idempotencyRecord.createdAt(),
+                        ATTR_UPDATED_AT, idempotencyRecord.updatedAt(),
+                        "expiresAt", idempotencyRecord.expiresAt()));
     }
 
     private Map<String, Object> attributes(Object... entries) {
