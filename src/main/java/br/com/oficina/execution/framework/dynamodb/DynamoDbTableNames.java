@@ -1,6 +1,7 @@
 package br.com.oficina.execution.framework.dynamodb;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import java.util.List;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped
@@ -29,5 +30,9 @@ public class DynamoDbTableNames {
 
     public String idempotencia() {
         return prefix + "-idempotencia";
+    }
+
+    public List<String> todas() {
+        return List.of(catalogo(), estoque(), execucoes(), outbox(), idempotencia());
     }
 }

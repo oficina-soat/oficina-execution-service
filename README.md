@@ -35,6 +35,21 @@ A persistência runtime usa `DynamoDbClient` síncrono com as tabelas definidas 
 
 Os testes do serviço sobem DynamoDB Local via Testcontainers, criam as cinco tabelas canônicas com os GSIs esperados e exercitam as APIs HTTP, o consumo de eventos e os mapeamentos técnicos sem depender de estruturas em memória como persistência principal.
 
+O serviço não possui fallback de persistência para memória. Os profiles `dev` e `test` podem usar deliberadamente DynamoDB Local e LocalStack; os runtimes protegidos usam somente dependências AWS reais.
+
+## Proteção de runtime
+
+O runtime é protegido quando qualquer profile Quarkus ativo é `prod` ou `lab`, ou quando `DEPLOYMENT_ENVIRONMENT=lab`. Nesses casos, a inicialização falha antes de aceitar tráfego se ocorrer qualquer uma destas condições:
+
+- região AWS, prefixo das tabelas DynamoDB, issuer, audience ou localização do JWKS ausentes ou com placeholder;
+- mensageria, publisher, consumer ou worker desabilitados;
+- endpoint alternativo de DynamoDB, SNS ou SQS configurado;
+- credenciais AWS estáticas parciais;
+- tabela DynamoDB ausente ou fora do estado `ACTIVE`;
+- identidade IAM inválida, tópico SNS produzido ausente ou fila SQS consumida ausente/inacessível.
+
+A validação de infraestrutura é não destrutiva e usa STS, `DescribeTable`, `GetTopicAttributes` e `GetQueueUrl`. A cadeia padrão de credenciais AWS, incluindo IAM Role/IRSA, permanece preferencial e não exige secrets de access key. Quando credenciais estáticas forem necessárias, informe `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY`; acrescente `AWS_SESSION_TOKEN` para credenciais temporárias.
+
 ## Mensageria SNS/SQS
 
 O serviço publica eventos de diagnóstico, execução e estoque exclusivamente pela Outbox DynamoDB. Quando `OFICINA_MESSAGING_ENABLED=true`, o worker assíncrono publica pendentes no SNS canônico, aplica retry/backoff, marca `PUBLISHED` após sucesso e marca `FAILED` ao esgotar tentativas. O consumo usa filas SQS por tópico/consumidor e só remove a mensagem depois que a idempotência e o processamento local são persistidos no DynamoDB.
@@ -42,7 +57,7 @@ O serviço publica eventos de diagnóstico, execução e estoque exclusivamente 
 Configuração principal:
 
 - `OFICINA_MESSAGING_ENABLED`
-- `OFICINA_MESSAGING_ENDPOINT_OVERRIDE`, para LocalStack
+- `OFICINA_MESSAGING_ENDPOINT_OVERRIDE`, somente para LocalStack em `dev` ou `test`
 - `OFICINA_MESSAGING_PUBLISHER_BATCH_SIZE`
 - `OFICINA_MESSAGING_PUBLISHER_MAX_ATTEMPTS`
 - `OFICINA_MESSAGING_CONSUMER_MAX_MESSAGES`
@@ -84,18 +99,18 @@ cd ../oficina-execution-service
 ./mvnw -B package -Pdynamodb
 ```
 
-O comando `verify` executa testes unitários, integração, contrato e verificação de cobertura JaCoCo.
+O `quarkus:dev` ativa o profile `dev`, no qual endpoints locais são permitidos de forma explícita. O comando `verify` executa testes unitários, integração, contrato e verificação de cobertura JaCoCo.
 
 ## Cobertura
 
-O JaCoCo é executado no `verify`, gera relatório em `target/jacoco-report/` e falha o build quando a cobertura de instruções do bundle fica abaixo de 80%. O [Template GitHub Actions para Microsserviços](../oficina-platform/templates/github-actions/README.md) publica esse diretório como artifact `jacoco-report-oficina-execution-service` e envia `target/jacoco-report/jacoco.xml` ao SonarCloud.
+O JaCoCo é executado no `verify`, gera relatório em `target/jacoco-report/` e falha o build quando a cobertura de instruções do bundle fica abaixo do gate local de 90%, superior ao mínimo normativo de 80%. O [Template GitHub Actions para Microsserviços](../oficina-platform/templates/github-actions/README.md) publica esse diretório como artifact `jacoco-report-oficina-execution-service` e envia `target/jacoco-report/jacoco.xml` ao SonarCloud.
 
-Evidência local de cobertura em 2026-07-11:
+Evidência local de cobertura em 2026-07-12:
 
 ```text
 ./mvnw -B clean verify -Pdynamodb -DskipITs=false -DfailIfNoTests=false
-instruction=91.03% branch=69.74% line=91.47% complexity=78.27%
-Tests run: 51, Failures: 0, Errors: 0, Skipped: 0
+instruction=93.04% branch=80.43% line=93.44% complexity=83.96%
+Tests run: 99, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
@@ -103,7 +118,7 @@ BUILD SUCCESS
 
 Os workflows ficam em [.github/workflows/service-ci.yml](.github/workflows/service-ci.yml) e [.github/workflows/open-pr-to-main.yml](.github/workflows/open-pr-to-main.yml), derivados do [Template GitHub Actions para Microsserviços](../oficina-platform/templates/github-actions/README.md).
 
-Pull requests e pushes na `main` executam o check `service-ci-validate` com `./mvnw -B verify -Pdynamodb -DskipITs=false -DfailIfNoTests=false`, validam a cobertura mínima de 80%, publicam o artifact `jacoco-report-oficina-execution-service` e executam SonarCloud com o relatório `target/jacoco-report/jacoco.xml`. O secret `SONAR_TOKEN` deve existir no repositório ou na organização GitHub, e a Automatic Analysis do SonarCloud deve ficar desabilitada para evitar análise duplicada sem cobertura.
+Pull requests e pushes na `main` executam o check `service-ci-validate` com `./mvnw -B verify -Pdynamodb -DskipITs=false -DfailIfNoTests=false`, validam o gate local de 90% de cobertura de instruções, publicam o artifact `jacoco-report-oficina-execution-service` e executam SonarCloud com o relatório `target/jacoco-report/jacoco.xml`. O secret `SONAR_TOKEN` deve existir no repositório ou na organização GitHub, e a Automatic Analysis do SonarCloud deve ficar desabilitada para evitar análise duplicada sem cobertura.
 
 A publicação de imagem e o deploy Kubernetes são automáticos por padrão em `main` e podem ser desligados explicitamente:
 
@@ -124,8 +139,10 @@ O teste [PlatformContractsTest](src/test/java/br/com/oficina/execution/contracts
 
 ```bash
 docker build --build-arg MAVEN_PROFILE=dynamodb -t oficina-execution-service:local .
-docker run --rm -p 8080:8080 oficina-execution-service:local
+docker run --rm -p 8080:8080 --env-file .env.runtime oficina-execution-service:local
 ```
+
+A imagem empacotada inicia no profile `prod`; o arquivo local não versionado `.env.runtime` deve fornecer as configurações obrigatórias e apontar para recursos AWS acessíveis. Para desenvolvimento com emuladores, use `quarkus:dev`.
 
 ## Kubernetes
 
@@ -166,15 +183,20 @@ O teste [PlatformContractsTest](src/test/java/br/com/oficina/execution/contracts
 ## Variáveis principais
 
 - `AWS_REGION`
+- `AWS_ACCOUNT_ID` (opcional; quando ausente, o serviço resolve a conta via STS)
+- `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` (opcionais com IAM Role/IRSA)
+- `AWS_SESSION_TOKEN` (opcional para credenciais temporárias)
 - `OFICINA_DYNAMODB_TABLE_PREFIX`
-- `DYNAMODB_ENDPOINT_OVERRIDE`
+- `DYNAMODB_ENDPOINT_OVERRIDE` (somente `dev` ou `test`)
+- `OFICINA_MESSAGING_ENABLED`
+- `OFICINA_MESSAGING_ENDPOINT_OVERRIDE` (somente `dev` ou `test`)
 - `OFICINA_AUTH_ISSUER`
 - `OFICINA_AUTH_AUDIENCE`
 - `MP_JWT_VERIFY_PUBLICKEY_LOCATION`
 - `OTEL_EXPORTER_OTLP_ENDPOINT`
 - `DEPLOYMENT_ENVIRONMENT`
 
-Em ambiente local, valores de desenvolvimento ficam em `src/main/resources/application.properties`. Em Kubernetes, variáveis de DynamoDB e observabilidade vêm do ConfigMap definido pelo manifest canônico no `oficina-infra`; permissões AWS devem ser resolvidas pela infraestrutura do ambiente.
+Em ambiente local, valores de desenvolvimento ficam em `src/main/resources/application.properties`. Em Kubernetes, variáveis de DynamoDB, mensageria e observabilidade vêm do ConfigMap definido pelo manifest canônico no `oficina-infra`; permissões AWS devem ser resolvidas pela infraestrutura do ambiente.
 
 ## Estrutura
 
@@ -187,4 +209,4 @@ src/main/java/br/com/oficina/execution/
 
 ## Próximo Trabalho
 
-O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados no Épico B2 são configurar a proteção da branch `main`, impedir fallback silencioso em runtime e manter a documentação local atualizada conforme novos manifests, variáveis e evidências forem materializados, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
+O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados devem manter a documentação local atualizada conforme novos manifests, variáveis e evidências forem materializados, preservando alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).

@@ -1,6 +1,8 @@
 package br.com.oficina.execution.framework.dynamodb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
@@ -63,6 +65,23 @@ class DynamoDbExecutionStoreTest {
                         && item.pk().equals("PECA#" + DynamoDbExecutionStore.SEED_PECA_ID)
                         && item.sk().equals("SALDO")
                         && item.attributes().get("quantidadeDisponivel").equals(50)));
+    }
+
+    @Test
+    void deveValidarTodasAsTabelasObrigatoriasNoStartup() {
+        var dependencies = new DynamoDbRuntimeDependencies(tableNames, client);
+
+        assertDoesNotThrow(dependencies::validar);
+    }
+
+    @Test
+    void deveFalharQuandoTabelaObrigatoriaNaoExiste() {
+        var missingTableNames = new DynamoDbTableNames("oficina-execution-missing-" + UUID.randomUUID());
+        var dependencies = new DynamoDbRuntimeDependencies(missingTableNames, client);
+
+        var exception = assertThrows(IllegalStateException.class, dependencies::validar);
+
+        assertTrue(exception.getMessage().contains(missingTableNames.catalogo()));
     }
 
     @Test
