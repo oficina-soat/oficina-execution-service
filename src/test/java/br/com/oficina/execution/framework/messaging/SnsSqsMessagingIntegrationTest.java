@@ -65,6 +65,27 @@ class SnsSqsMessagingIntegrationTest {
     }
 
     @Test
+    void deveMarcarFalhaQuandoEventoNaoForProduzidoPeloServico() {
+        var event = store.registrarOutbox(
+                "eventoNaoContratado",
+                "oficina.execution.diagnostico-iniciado",
+                UUID.randomUUID().toString(),
+                Map.of("status", "INVALIDO"),
+                "corr-execution-failure");
+
+        var publicados = outboxPublisher.publicarPendentes();
+
+        assertTrue(publicados.stream().noneMatch(candidate -> candidate.eventId().equals(event.eventId())));
+        var failed = store.outboxEvents().stream()
+                .filter(candidate -> candidate.eventId().equals(event.eventId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("FAILED", failed.status().name());
+        assertEquals(1, failed.attempts());
+        assertTrue(failed.lastError().contains("Evento nao produzido pelo oficina-execution-service"));
+    }
+
+    @Test
     void deveConsumirSqsEAckSomenteAposPersistirIdempotencia() throws Exception {
         var ordemServicoId = UUID.randomUUID();
         var eventId = UUID.randomUUID();
