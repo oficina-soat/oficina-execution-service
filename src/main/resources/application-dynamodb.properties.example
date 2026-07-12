@@ -1,3 +1,4 @@
+# Exemplo local. Em prod/lab, AWS_REGION e OFICINA_DYNAMODB_TABLE_PREFIX sao obrigatorios.
 quarkus.dynamodb.aws.region=${AWS_REGION:us-east-1}
 quarkus.dynamodb.aws.credentials.type=default
 
@@ -5,3 +6,7 @@ oficina.dynamodb.table-prefix=${OFICINA_DYNAMODB_TABLE_PREFIX:oficina-execution-
 
 %dev.quarkus.dynamodb.endpoint-override=${DYNAMODB_ENDPOINT_OVERRIDE:http://localhost:8000}
 %test.quarkus.dynamodb.endpoint-override=${DYNAMODB_ENDPOINT_OVERRIDE:http://localhost:8000}
+%prod.quarkus.dynamodb.aws.region=${AWS_REGION}
+%prod.oficina.dynamodb.table-prefix=${OFICINA_DYNAMODB_TABLE_PREFIX}
+%lab.quarkus.dynamodb.aws.region=${AWS_REGION}
+%lab.oficina.dynamodb.table-prefix=${OFICINA_DYNAMODB_TABLE_PREFIX}

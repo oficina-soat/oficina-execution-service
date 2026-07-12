@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
@@ -40,19 +41,34 @@ class AwsDomainMessagingClient {
     AwsDomainMessagingClient(
             @ConfigProperty(name = "quarkus.application.name") String applicationName,
             @ConfigProperty(name = "AWS_REGION", defaultValue = "us-east-1") String region,
-            @ConfigProperty(name = "oficina.messaging.endpoint-override", defaultValue = "") String endpointOverride,
+            @ConfigProperty(name = "oficina.messaging.endpoint-override") Optional<String> endpointOverride,
             @ConfigProperty(name = "oficina.messaging.aws-account-id") Optional<String> configuredAccountId,
             @ConfigProperty(name = "oficina.messaging.aws-access-key-id") Optional<String> accessKeyId,
-            @ConfigProperty(name = "oficina.messaging.aws-secret-access-key") Optional<String> secretAccessKey) {
+            @ConfigProperty(name = "oficina.messaging.aws-secret-access-key") Optional<String> secretAccessKey,
+            @ConfigProperty(name = "oficina.messaging.aws-session-token") Optional<String> sessionToken) {
         this.region = region;
-        this.endpointOverride = endpointOverride;
+        this.endpointOverride = endpointOverride.orElse("");
         this.configuredAccountId = configuredAccountId.orElse("");
-        var credentialsProvider = credentialsProvider(accessKeyId.orElse(""), secretAccessKey.orElse(""), endpointOverride);
-        this.snsClient = snsClient(region, endpointOverride, credentialsProvider);
-        this.sqsClient = sqsClient(region, endpointOverride, credentialsProvider);
+        var credentialsProvider = credentialsProvider(
+                accessKeyId.orElse(""),
+                secretAccessKey.orElse(""),
+                sessionToken.orElse(""),
+                this.endpointOverride);
+        this.snsClient = snsClient(region, this.endpointOverride, credentialsProvider);
+        this.sqsClient = sqsClient(region, this.endpointOverride, credentialsProvider);
         this.stsClient = stsClient(region, credentialsProvider);
         if (!DomainMessagingRoutes.SERVICE_NAME.equals(applicationName)) {
             throw new IllegalStateException("Servico de mensageria configurado com nome invalido: " + applicationName);
+        }
+    }
+
+    void validarDependencias() {
+        validarIdentidadeAws();
+        for (var topic : DomainMessagingRoutes.producedTopics()) {
+            validarTopico(topic);
+        }
+        for (var topic : DomainMessagingRoutes.consumedTopics()) {
+            validarFila(topic);
         }
     }
 
@@ -114,6 +130,35 @@ class AwsDomainMessagingClient {
         return resolvedAccountId;
     }
 
+    private void validarIdentidadeAws() {
+        if (!endpointOverride.isBlank()) {
+            return;
+        }
+        var callerAccountId = stsClient.getCallerIdentity().account();
+        if (!configuredAccountId.isBlank() && !configuredAccountId.equals(callerAccountId)) {
+            throw new IllegalStateException(
+                    "AWS_ACCOUNT_ID configurado nao corresponde a identidade IAM do runtime.");
+        }
+        resolvedAccountId = callerAccountId;
+    }
+
+    private void validarTopico(String topic) {
+        try {
+            snsClient.getTopicAttributes(request -> request.topicArn(topicArn(topic)));
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("Falha ao validar topico SNS obrigatorio: " + topic, exception);
+        }
+    }
+
+    private void validarFila(String topic) {
+        try {
+            queueUrl(topic);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException(
+                    "Falha ao validar fila SQS obrigatoria: " + DomainMessagingRoutes.queueName(topic), exception);
+        }
+    }
+
     private static Map<String, MessageAttributeValue> messageAttributes(Map<String, String> attributes) {
         var result = new HashMap<String, MessageAttributeValue>();
         attributes.forEach((key, value) -> {
@@ -127,8 +172,23 @@ class AwsDomainMessagingClient {
         return Map.copyOf(result);
     }
 
-    private static AwsCredentialsProvider credentialsProvider(String accessKeyId, String secretAccessKey, String endpointOverride) {
-        if (!accessKeyId.isBlank() && !secretAccessKey.isBlank()) {
+    static AwsCredentialsProvider credentialsProvider(
+            String accessKeyId,
+            String secretAccessKey,
+            String sessionToken,
+            String endpointOverride) {
+        var accessKeyConfigured = !accessKeyId.isBlank();
+        var secretKeyConfigured = !secretAccessKey.isBlank();
+        var sessionTokenConfigured = !sessionToken.isBlank();
+        if (accessKeyConfigured != secretKeyConfigured || (sessionTokenConfigured && !accessKeyConfigured)) {
+            throw new IllegalStateException(
+                    "Credenciais AWS estaticas incompletas: informe access key e secret key; session token e opcional.");
+        }
+        if (accessKeyConfigured) {
+            if (sessionTokenConfigured) {
+                return StaticCredentialsProvider.create(
+                        AwsSessionCredentials.create(accessKeyId, secretAccessKey, sessionToken));
+            }
             return StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKeyId, secretAccessKey));
         }
         if (!endpointOverride.isBlank()) {

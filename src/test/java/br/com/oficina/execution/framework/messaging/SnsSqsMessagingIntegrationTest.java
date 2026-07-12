@@ -1,6 +1,7 @@
 package br.com.oficina.execution.framework.messaging;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
@@ -31,6 +32,14 @@ class SnsSqsMessagingIntegrationTest {
 
     @Inject
     SqsDomainEventConsumer sqsConsumer;
+
+    @Inject
+    MessagingRuntimeDependencies messagingDependencies;
+
+    @Test
+    void deveValidarTopicosProduzidosEFilasConsumidas() {
+        assertDoesNotThrow(messagingDependencies::validar);
+    }
 
     @Test
     void devePublicarOutboxNoSnsEEntregarNaFilaConsumidora() throws Exception {
