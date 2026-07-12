@@ -39,7 +39,8 @@ class DynamoDbRecordValidationTest {
         assertEquals("PK|SK", item.key());
         assertEquals("CRIADA", item.attributes().get("status"));
         assertTrue(item("table", "PK", "SK", "EXECUCAO", null).attributes().isEmpty());
-        assertThrows(UnsupportedOperationException.class, () -> item.attributes().put("novo", "valor"));
+        var itemAttributes = item.attributes();
+        assertThrows(UnsupportedOperationException.class, () -> itemAttributes.put("novo", "valor"));
     }
 
     @Test
@@ -72,7 +73,8 @@ class DynamoDbRecordValidationTest {
 
         assertEquals("CRIADA", outbox.payload().get("status"));
         assertTrue(outbox(UUID.randomUUID(), "tipo", 1, "topico", "producer", "aggregate", OutboxStatus.PENDING, 0, "corr", NOW, NOW, null).payload().isEmpty());
-        assertThrows(UnsupportedOperationException.class, () -> outbox.payload().put("novo", "valor"));
+        var outboxPayload = outbox.payload();
+        assertThrows(UnsupportedOperationException.class, () -> outboxPayload.put("novo", "valor"));
     }
 
     @Test
