@@ -1,6 +1,7 @@
 package br.com.oficina.execution.framework.idempotency;
 
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore.IdempotencyWrite;
 import br.com.oficina.execution.framework.idempotency.IdempotencyRecord.ProcessingStatus;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.time.OffsetDateTime;
@@ -27,7 +28,7 @@ public class DynamoDbIdempotencyStore implements IdempotencyStore {
             String correlationId,
             String requestId,
             OffsetDateTime expiresAt) {
-        return toRecord(store.registrarIdempotencia(
+        return toRecord(store.registrarIdempotencia(new IdempotencyWrite(
                 scope,
                 key,
                 requestHash,
@@ -36,7 +37,7 @@ public class DynamoDbIdempotencyStore implements IdempotencyStore {
                 toDynamoStatus(ProcessingStatus.PROCESSING),
                 correlationId,
                 requestId,
-                expiresAt));
+                expiresAt)));
     }
 
     @Override
@@ -54,19 +55,19 @@ public class DynamoDbIdempotencyStore implements IdempotencyStore {
                 responseBody);
     }
 
-    private IdempotencyRecord toRecord(br.com.oficina.execution.framework.dynamodb.IdempotencyRecord record) {
+    private IdempotencyRecord toRecord(br.com.oficina.execution.framework.dynamodb.IdempotencyRecord persistedRecord) {
         return new IdempotencyRecord(
-                record.scope(),
-                record.key(),
-                record.requestHash(),
-                toWebStatus(record.processingStatus()),
-                record.responseStatus(),
-                record.responseBody(),
-                record.correlationId(),
-                record.requestId(),
-                record.createdAt(),
-                record.updatedAt(),
-                record.expiresAt());
+                persistedRecord.scope(),
+                persistedRecord.key(),
+                persistedRecord.requestHash(),
+                toWebStatus(persistedRecord.processingStatus()),
+                persistedRecord.responseStatus(),
+                persistedRecord.responseBody(),
+                persistedRecord.correlationId(),
+                persistedRecord.requestId(),
+                persistedRecord.createdAt(),
+                persistedRecord.updatedAt(),
+                persistedRecord.expiresAt());
     }
 
     private br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus toDynamoStatus(

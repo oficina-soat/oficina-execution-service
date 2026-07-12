@@ -41,7 +41,26 @@ public final class Execucao {
         this.status = StatusExecucao.CRIADA;
     }
 
-    public static Execucao reconstituir(
+    public static Execucao reconstituir(Snapshot snapshot) {
+        if (snapshot.status() == null) {
+            throw new IllegalArgumentException("Status da execucao e obrigatorio.");
+        }
+        if (snapshot.atualizadoEm() == null) {
+            throw new IllegalArgumentException("Data de atualizacao da execucao e obrigatoria.");
+        }
+        var execucao = new Execucao(
+                snapshot.execucaoId(),
+                snapshot.ordemServicoId(),
+                snapshot.prioridade(),
+                snapshot.criadoEm());
+        execucao.status = snapshot.status();
+        execucao.diagnostico = textoOpcional(snapshot.diagnostico());
+        execucao.observacoesReparo = textoOpcional(snapshot.observacoesReparo());
+        execucao.atualizadoEm = snapshot.atualizadoEm();
+        return execucao;
+    }
+
+    public record Snapshot(
             UUID execucaoId,
             UUID ordemServicoId,
             int prioridade,
@@ -50,18 +69,6 @@ public final class Execucao {
             String observacoesReparo,
             OffsetDateTime criadoEm,
             OffsetDateTime atualizadoEm) {
-        if (status == null) {
-            throw new IllegalArgumentException("Status da execucao e obrigatorio.");
-        }
-        if (atualizadoEm == null) {
-            throw new IllegalArgumentException("Data de atualizacao da execucao e obrigatoria.");
-        }
-        var execucao = new Execucao(execucaoId, ordemServicoId, prioridade, criadoEm);
-        execucao.status = status;
-        execucao.diagnostico = textoOpcional(diagnostico);
-        execucao.observacoesReparo = textoOpcional(observacoesReparo);
-        execucao.atualizadoEm = atualizadoEm;
-        return execucao;
     }
 
     public void iniciarDiagnostico(OffsetDateTime agora) {

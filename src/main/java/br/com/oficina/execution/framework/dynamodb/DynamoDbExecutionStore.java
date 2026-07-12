@@ -28,7 +28,6 @@ import org.jboss.logging.MDC;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.Put;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.TransactWriteItem;
@@ -50,13 +49,40 @@ public class DynamoDbExecutionStore {
     private static final String ATTR_CREATED_AT = "createdAt";
     private static final String ATTR_UPDATED_AT = "updatedAt";
     private static final String ATTR_CORRELATION_ID = "correlationId";
+    private static final String ATTR_AGGREGATE_ID = "aggregateId";
+    private static final String ATTR_CODIGO = "codigo";
+    private static final String ATTR_DESCRICAO = "descricao";
+    private static final String ATTR_DIAGNOSTICO = "diagnostico";
+    private static final String ATTR_EVENT_ID = "eventId";
+    private static final String ATTR_EVENT_TYPE = "eventType";
+    private static final String ATTR_EVENT_VERSION = "eventVersion";
+    private static final String ATTR_EXPIRES_AT = "expiresAt";
+    private static final String ATTR_MOVIMENTO_ID = "movimentoId";
+    private static final String ATTR_PRODUCER = "producer";
+    private static final String ATTR_QUANTIDADE = "quantidade";
+    private static final String ATTR_STATUS = "status";
+    private static final String ATTR_TOPIC = "topic";
+    private static final String ATTR_VALOR_BASE = "valorBase";
+    private static final String ATTR_VALOR_UNITARIO = "valorUnitario";
     private static final String ATTR_PK = "PK";
     private static final String ATTR_SK = "SK";
     private static final String ATTR_ENTITY_TYPE = "entityType";
     private static final String SORT_KEY_METADATA = "METADATA";
+    private static final String SORT_KEY_REQUEST = "REQUEST";
+    private static final String ENTITY_EXECUCAO = "EXECUCAO";
+    private static final String ENTITY_ESTOQUE_MOVIMENTO = "ESTOQUE_MOVIMENTO";
+    private static final String ENTITY_ESTOQUE_SALDO = "ESTOQUE_SALDO";
+    private static final String ENTITY_IDEMPOTENCY = "IDEMPOTENCY";
+    private static final String ENTITY_OUTBOX_EVENT = "OUTBOX_EVENT";
+    private static final String ENTITY_PECA = "PECA";
+    private static final String ENTITY_SERVICO = "SERVICO";
     private static final String KEY_PREFIX_PECA = "PECA#";
     private static final String KEY_PREFIX_SERVICO = "SERVICO#";
     private static final String KEY_PREFIX_EXECUCAO = "EXECUCAO#";
+    private static final String KEY_PREFIX_IDEMPOTENCY = "IDEMPOTENCY#";
+    private static final String KEY_PREFIX_OUTBOX = "OUTBOX#";
+    private static final String MESSAGE_OUTBOX_EVENT_REGISTERED = "outbox event registered";
+    private static final String MESSAGE_STATUS_PENDING = "PENDING";
 
     private final DynamoDbTableNames tableNames;
     private final DynamoDbClient dynamoDbClient;
@@ -65,6 +91,18 @@ public class DynamoDbExecutionStore {
         this.tableNames = tableNames;
         this.dynamoDbClient = dynamoDbClient;
         aplicarSeedLimpo();
+    }
+
+    public record IdempotencyWrite(
+            String scope,
+            String key,
+            String requestHash,
+            Integer responseStatus,
+            String responseBody,
+            ProcessingStatus status,
+            String correlationId,
+            String requestId,
+            OffsetDateTime expiresAt) {
     }
 
     public void aplicarSeedLimpo() {
@@ -88,7 +126,7 @@ public class DynamoDbExecutionStore {
 
     public List<Servico> listarServicos() {
         return catalogoItems().stream()
-                .filter(item -> item.entityType().equals("SERVICO"))
+                .filter(item -> item.entityType().equals(ENTITY_SERVICO))
                 .map(this::toServico)
                 .sorted(Comparator.comparing(Servico::criadoEm))
                 .toList();
@@ -96,7 +134,7 @@ public class DynamoDbExecutionStore {
 
     public Servico buscarServico(UUID servicoId) {
         return getItem(tableNames.catalogo(), KEY_PREFIX_SERVICO + servicoId, SORT_KEY_METADATA)
-                .filter(item -> item.entityType().equals("SERVICO"))
+                .filter(item -> item.entityType().equals(ENTITY_SERVICO))
                 .map(this::toServico)
                 .orElseThrow(() -> new ResourceNotFoundException("Servico nao encontrado: " + servicoId));
     }
@@ -120,7 +158,7 @@ public class DynamoDbExecutionStore {
 
     public List<Peca> listarPecas() {
         return catalogoItems().stream()
-                .filter(item -> item.entityType().equals("PECA"))
+                .filter(item -> item.entityType().equals(ENTITY_PECA))
                 .map(this::toPeca)
                 .sorted(Comparator.comparing(Peca::criadoEm))
                 .toList();
@@ -128,7 +166,7 @@ public class DynamoDbExecutionStore {
 
     public Peca buscarPeca(UUID pecaId) {
         return getItem(tableNames.catalogo(), KEY_PREFIX_PECA + pecaId, SORT_KEY_METADATA)
-                .filter(item -> item.entityType().equals("PECA"))
+                .filter(item -> item.entityType().equals(ENTITY_PECA))
                 .map(this::toPeca)
                 .orElseThrow(() -> new ResourceNotFoundException("Peca nao encontrada: " + pecaId));
     }
@@ -145,7 +183,7 @@ public class DynamoDbExecutionStore {
     public Estoque buscarSaldo(UUID pecaId) {
         buscarPeca(pecaId);
         return getItem(tableNames.estoque(), KEY_PREFIX_PECA + pecaId, "SALDO")
-                .filter(item -> item.entityType().equals("ESTOQUE_SALDO"))
+                .filter(item -> item.entityType().equals(ENTITY_ESTOQUE_SALDO))
                 .map(this::toEstoque)
                 .orElseGet(() -> {
                     var saldo = new Estoque(pecaId, 0, 0, agora());
@@ -156,7 +194,7 @@ public class DynamoDbExecutionStore {
 
     public List<MovimentoEstoque> listarMovimentos(UUID pecaId, UUID ordemServicoId) {
         return estoqueItems().stream()
-                .filter(item -> item.entityType().equals("ESTOQUE_MOVIMENTO"))
+                .filter(item -> item.entityType().equals(ENTITY_ESTOQUE_MOVIMENTO))
                 .map(this::toMovimento)
                 .filter(movimento -> pecaId == null || movimento.pecaId().equals(pecaId))
                 .filter(movimento -> ordemServicoId == null || ordemServicoId.equals(movimento.ordemServicoId()))
@@ -182,7 +220,7 @@ public class DynamoDbExecutionStore {
             transactPut(toItem(saldo), toItem(movimento));
         } else {
             transactPut(toItem(saldo), toItem(movimento), toItem(outbox));
-            logEvent("outbox event registered", outbox, "PENDING");
+            logEvent(MESSAGE_OUTBOX_EVENT_REGISTERED, outbox, MESSAGE_STATUS_PENDING);
         }
         return movimento;
     }
@@ -212,7 +250,7 @@ public class DynamoDbExecutionStore {
 
     public List<Execucao> listarExecucoes(StatusExecucao status) {
         return execucaoItems().stream()
-                .filter(item -> item.entityType().equals("EXECUCAO"))
+                .filter(item -> item.entityType().equals(ENTITY_EXECUCAO))
                 .map(this::toExecucao)
                 .filter(execucao -> status == null || execucao.status() == status)
                 .sorted(Comparator.comparing(Execucao::criadoEm))
@@ -221,7 +259,7 @@ public class DynamoDbExecutionStore {
 
     public List<Execucao> listarFilaExecucao(StatusExecucao status) {
         return execucaoItems().stream()
-                .filter(item -> item.entityType().equals("EXECUCAO"))
+                .filter(item -> item.entityType().equals(ENTITY_EXECUCAO))
                 .map(this::toExecucao)
                 .filter(execucao -> status == null ? statusEmFila(execucao.status()) : execucao.status() == status && statusEmFila(status))
                 .sorted(ordenacaoFila())
@@ -230,7 +268,7 @@ public class DynamoDbExecutionStore {
 
     public Execucao buscarExecucao(UUID execucaoId) {
         return getItem(tableNames.execucoes(), KEY_PREFIX_EXECUCAO + execucaoId, SORT_KEY_METADATA)
-                .filter(item -> item.entityType().equals("EXECUCAO"))
+                .filter(item -> item.entityType().equals(ENTITY_EXECUCAO))
                 .map(this::toExecucao)
                 .orElseThrow(() -> new ResourceNotFoundException("Execucao nao encontrada: " + execucaoId));
     }
@@ -292,7 +330,7 @@ public class DynamoDbExecutionStore {
             String correlationId) {
         var event = outboxRecord(eventType, topic, aggregateId, payload, correlationId);
         put(toItem(event));
-        logEvent("outbox event registered", event, "PENDING");
+        logEvent(MESSAGE_OUTBOX_EVENT_REGISTERED, event, MESSAGE_STATUS_PENDING);
         return event;
     }
 
@@ -303,7 +341,7 @@ public class DynamoDbExecutionStore {
             Integer responseStatus,
             String responseBody,
             ProcessingStatus status) {
-        return registrarIdempotencia(
+        return registrarIdempotencia(new IdempotencyWrite(
                 scope,
                 key,
                 requestHash,
@@ -312,43 +350,34 @@ public class DynamoDbExecutionStore {
                 status,
                 correlationId(null),
                 null,
-                agora().plusDays(1));
+                agora().plusDays(1)));
     }
 
-    public IdempotencyRecord registrarIdempotencia(
-            String scope,
-            String key,
-            String requestHash,
-            Integer responseStatus,
-            String responseBody,
-            ProcessingStatus status,
-            String correlationId,
-            String requestId,
-            OffsetDateTime expiresAt) {
+    public IdempotencyRecord registrarIdempotencia(IdempotencyWrite write) {
         var agora = agora();
         var idempotencyRecord = new IdempotencyRecord(
-                scope,
-                key,
-                requestHash,
-                responseStatus,
-                responseBody,
-                status,
-                correlationId,
-                requestId,
+                write.scope(),
+                write.key(),
+                write.requestHash(),
+                write.responseStatus(),
+                write.responseBody(),
+                write.status(),
+                write.correlationId(),
+                write.requestId(),
                 agora,
                 agora,
-                expiresAt);
+                write.expiresAt());
         put(toItem(idempotencyRecord));
         return idempotencyRecord;
     }
 
     public Optional<IdempotencyRecord> buscarIdempotencia(String scope, String key) {
-        return getItem(tableNames.idempotencia(), "IDEMPOTENCY#" + scope + "#" + key, "REQUEST")
+        return getItem(tableNames.idempotencia(), KEY_PREFIX_IDEMPOTENCY + scope + "#" + key, SORT_KEY_REQUEST)
                 .map(this::toIdempotencyRecord);
     }
 
     public boolean idempotenciaExiste(String scope, String key) {
-        return getItem(tableNames.idempotencia(), "IDEMPOTENCY#" + scope + "#" + key, "REQUEST").isPresent();
+        return getItem(tableNames.idempotencia(), KEY_PREFIX_IDEMPOTENCY + scope + "#" + key, SORT_KEY_REQUEST).isPresent();
     }
 
     public void concluirIdempotencia(
@@ -395,7 +424,7 @@ public class DynamoDbExecutionStore {
 
     public List<OutboxEventRecord> outboxEvents() {
         return outboxItems().stream()
-                .filter(item -> item.entityType().equals("OUTBOX_EVENT"))
+                .filter(item -> item.entityType().equals(ENTITY_OUTBOX_EVENT))
                 .map(this::toOutboxEvent)
                 .sorted(Comparator.comparing(OutboxEventRecord::createdAt))
                 .toList();
@@ -468,7 +497,7 @@ public class DynamoDbExecutionStore {
     }
 
     private OutboxEventRecord buscarOutbox(UUID eventId) {
-        return getItem(tableNames.outbox(), "OUTBOX#" + eventId, "EVENT")
+        return getItem(tableNames.outbox(), KEY_PREFIX_OUTBOX + eventId, "EVENT")
                 .map(this::toOutboxEvent)
                 .orElseThrow(() -> new IllegalStateException("Evento de Outbox nao encontrado: " + eventId));
     }
@@ -496,7 +525,7 @@ public class DynamoDbExecutionStore {
         var historico = historico(execucao, statusAnterior, execucao.status(), descricao, null, execucao.atualizadoEm());
         var outbox = outboxRecord(eventType, topic, execucao.ordemServicoId().toString(), payload, correlationId(correlationId));
         transactPut(toItem(execucao), historico, toItem(outbox));
-        logEvent("outbox event registered", outbox, "PENDING");
+        logEvent(MESSAGE_OUTBOX_EVENT_REGISTERED, outbox, MESSAGE_STATUS_PENDING);
     }
 
     private OutboxEventRecord outboxEstoque(MovimentoEstoque movimento, String correlationId) {
@@ -564,14 +593,14 @@ public class DynamoDbExecutionStore {
                         ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
                         "statusAnterior", statusAnterior,
                         "statusNovo", statusNovo,
-                        "descricao", descricao,
+                        ATTR_DESCRICAO, descricao,
                         ATTR_CREATED_AT, criadoEm,
                         "sourceEventId", sourceEventId));
     }
 
     private Execucao findExecucaoDaOrdemServico(UUID ordemServicoId) {
         return execucaoItems().stream()
-                .filter(item -> item.entityType().equals("EXECUCAO"))
+                .filter(item -> item.entityType().equals(ENTITY_EXECUCAO))
                 .map(this::toExecucao)
                 .filter(execucao -> execucao.ordemServicoId().equals(ordemServicoId))
                 .findFirst()
@@ -591,7 +620,7 @@ public class DynamoDbExecutionStore {
                 ATTR_EXECUCAO_ID, execucao.execucaoId(),
                 ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
                 ATTR_STATUS_EXECUCAO, execucao.status(),
-                "diagnostico", execucao.diagnostico(),
+                ATTR_DIAGNOSTICO, execucao.diagnostico(),
                 "servicos", List.of(),
                 "pecas", List.of(),
                 "finalizadoEm", execucao.atualizadoEm());
@@ -616,11 +645,11 @@ public class DynamoDbExecutionStore {
 
     private Map<String, Object> payloadEstoque(MovimentoEstoque movimento) {
         return attributes(
-                "movimentoId", movimento.movimentoId(),
+                ATTR_MOVIMENTO_ID, movimento.movimentoId(),
                 ATTR_PECA_ID, movimento.pecaId(),
                 ATTR_ORDEM_SERVICO_ID, movimento.ordemServicoId(),
                 "tipo", movimento.tipo(),
-                "quantidade", movimento.quantidade(),
+                ATTR_QUANTIDADE, movimento.quantidade(),
                 "observacao", movimento.motivo(),
                 "movimentadoEm", movimento.criadoEm());
     }
@@ -630,13 +659,13 @@ public class DynamoDbExecutionStore {
                 tableNames.execucoes(),
                 KEY_PREFIX_EXECUCAO + execucao.execucaoId(),
                 SORT_KEY_METADATA,
-                "EXECUCAO",
+                ENTITY_EXECUCAO,
                 attributes(
                         ATTR_EXECUCAO_ID, execucao.execucaoId(),
                         ATTR_ORDEM_SERVICO_ID, execucao.ordemServicoId(),
-                        "status", execucao.status(),
+                        ATTR_STATUS, execucao.status(),
                         "prioridade", execucao.prioridade(),
-                        "diagnostico", execucao.diagnostico(),
+                        ATTR_DIAGNOSTICO, execucao.diagnostico(),
                         "observacoesReparo", execucao.observacoesReparo(),
                         ATTR_CREATED_AT, execucao.criadoEm(),
                         ATTR_UPDATED_AT, execucao.atualizadoEm(),
@@ -650,13 +679,13 @@ public class DynamoDbExecutionStore {
                 tableNames.catalogo(),
                 KEY_PREFIX_SERVICO + servico.servicoId(),
                 SORT_KEY_METADATA,
-                "SERVICO",
+                ENTITY_SERVICO,
                 attributes(
                         "servicoId", servico.servicoId(),
                         "nome", servico.nome(),
                         "nomeNormalizado", servico.nome().toUpperCase(),
-                        "descricao", servico.descricao(),
-                        "valorBase", servico.valorBase(),
+                        ATTR_DESCRICAO, servico.descricao(),
+                        ATTR_VALOR_BASE, servico.valorBase(),
                         "ativo", servico.ativo(),
                         ATTR_CREATED_AT, servico.criadoEm(),
                         ATTR_UPDATED_AT, servico.atualizadoEm()));
@@ -667,13 +696,13 @@ public class DynamoDbExecutionStore {
                 tableNames.catalogo(),
                 KEY_PREFIX_PECA + peca.pecaId(),
                 SORT_KEY_METADATA,
-                "PECA",
+                ENTITY_PECA,
                 attributes(
                         ATTR_PECA_ID, peca.pecaId(),
                         "nome", peca.nome(),
                         "nomeNormalizado", peca.nome().toUpperCase(),
-                        "codigo", peca.codigo(),
-                        "valorUnitario", peca.valorUnitario(),
+                        ATTR_CODIGO, peca.codigo(),
+                        ATTR_VALOR_UNITARIO, peca.valorUnitario(),
                         "ativo", peca.ativo(),
                         ATTR_CREATED_AT, peca.criadoEm(),
                         ATTR_UPDATED_AT, peca.atualizadoEm()));
@@ -684,7 +713,7 @@ public class DynamoDbExecutionStore {
                 tableNames.estoque(),
                 KEY_PREFIX_PECA + saldo.pecaId(),
                 "SALDO",
-                "ESTOQUE_SALDO",
+                ENTITY_ESTOQUE_SALDO,
                 attributes(
                         ATTR_PECA_ID, saldo.pecaId(),
                         "quantidadeDisponivel", saldo.quantidadeDisponivel(),
@@ -697,13 +726,13 @@ public class DynamoDbExecutionStore {
                 tableNames.estoque(),
                 KEY_PREFIX_PECA + movimento.pecaId(),
                 "MOVIMENTO#" + movimento.criadoEm() + "#" + movimento.movimentoId(),
-                "ESTOQUE_MOVIMENTO",
+                ENTITY_ESTOQUE_MOVIMENTO,
                 attributes(
-                        "movimentoId", movimento.movimentoId(),
+                        ATTR_MOVIMENTO_ID, movimento.movimentoId(),
                         ATTR_PECA_ID, movimento.pecaId(),
                         ATTR_ORDEM_SERVICO_ID, movimento.ordemServicoId(),
                         "tipo", movimento.tipo(),
-                        "quantidade", movimento.quantidade(),
+                        ATTR_QUANTIDADE, movimento.quantidade(),
                         "motivo", movimento.motivo(),
                         ATTR_CORRELATION_ID, correlationId(null),
                         ATTR_CREATED_AT, movimento.criadoEm()));
@@ -712,22 +741,22 @@ public class DynamoDbExecutionStore {
     private DynamoDbItem toItem(OutboxEventRecord event) {
         return new DynamoDbItem(
                 tableNames.outbox(),
-                "OUTBOX#" + event.eventId(),
+                KEY_PREFIX_OUTBOX + event.eventId(),
                 "EVENT",
-                "OUTBOX_EVENT",
+                ENTITY_OUTBOX_EVENT,
                 attributes(
-                        "eventId", event.eventId(),
-                        "eventType", event.eventType(),
-                        "eventVersion", event.eventVersion(),
-                        "topic", event.topic(),
-                        "producer", event.producer(),
-                        "aggregateId", event.aggregateId(),
+                        ATTR_EVENT_ID, event.eventId(),
+                        ATTR_EVENT_TYPE, event.eventType(),
+                        ATTR_EVENT_VERSION, event.eventVersion(),
+                        ATTR_TOPIC, event.topic(),
+                        ATTR_PRODUCER, event.producer(),
+                        ATTR_AGGREGATE_ID, event.aggregateId(),
                         "payload", event.payload(),
-                        "status", event.status(),
+                        ATTR_STATUS, event.status(),
                         "attempts", event.attempts(),
                         "nextAttemptAt", event.nextAttemptAt(),
                         "publishedAt", event.publishedAt(),
-                        "expiresAt", event.expiresAt(),
+                        ATTR_EXPIRES_AT, event.expiresAt(),
                         "lastError", event.lastError(),
                         ATTR_CORRELATION_ID, event.correlationId(),
                         ATTR_CREATED_AT, event.createdAt(),
@@ -737,9 +766,9 @@ public class DynamoDbExecutionStore {
     private DynamoDbItem toItem(IdempotencyRecord idempotencyRecord) {
         return new DynamoDbItem(
                 tableNames.idempotencia(),
-                "IDEMPOTENCY#" + idempotencyRecord.scope() + "#" + idempotencyRecord.key(),
-                "REQUEST",
-                "IDEMPOTENCY",
+                KEY_PREFIX_IDEMPOTENCY + idempotencyRecord.scope() + "#" + idempotencyRecord.key(),
+                SORT_KEY_REQUEST,
+                ENTITY_IDEMPOTENCY,
                 attributes(
                         "scope", idempotencyRecord.scope(),
                         "key", idempotencyRecord.key(),
@@ -751,17 +780,17 @@ public class DynamoDbExecutionStore {
                         "requestId", idempotencyRecord.requestId(),
                         ATTR_CREATED_AT, idempotencyRecord.createdAt(),
                         ATTR_UPDATED_AT, idempotencyRecord.updatedAt(),
-                        "expiresAt", idempotencyRecord.expiresAt()));
+                        ATTR_EXPIRES_AT, idempotencyRecord.expiresAt()));
     }
 
     private Peca toPeca(DynamoDbItem item) {
         var peca = new Peca(
                 uuid(item, ATTR_PECA_ID),
                 string(item, "nome"),
-                string(item, "codigo"),
-                decimal(item, "valorUnitario"),
+                string(item, ATTR_CODIGO),
+                decimal(item, ATTR_VALOR_UNITARIO),
                 offsetDateTime(item, ATTR_CREATED_AT));
-        peca.atualizar(string(item, "nome"), string(item, "codigo"), decimal(item, "valorUnitario"), offsetDateTime(item, ATTR_UPDATED_AT));
+        peca.atualizar(string(item, "nome"), string(item, ATTR_CODIGO), decimal(item, ATTR_VALOR_UNITARIO), offsetDateTime(item, ATTR_UPDATED_AT));
         return peca;
     }
 
@@ -769,10 +798,10 @@ public class DynamoDbExecutionStore {
         var servico = new Servico(
                 uuid(item, "servicoId"),
                 string(item, "nome"),
-                optionalString(item, "descricao"),
-                decimal(item, "valorBase"),
+                optionalString(item, ATTR_DESCRICAO),
+                decimal(item, ATTR_VALOR_BASE),
                 offsetDateTime(item, ATTR_CREATED_AT));
-        servico.atualizar(string(item, "nome"), optionalString(item, "descricao"), decimal(item, "valorBase"), offsetDateTime(item, ATTR_UPDATED_AT));
+        servico.atualizar(string(item, "nome"), optionalString(item, ATTR_DESCRICAO), decimal(item, ATTR_VALOR_BASE), offsetDateTime(item, ATTR_UPDATED_AT));
         return servico;
     }
 
@@ -786,42 +815,42 @@ public class DynamoDbExecutionStore {
 
     private MovimentoEstoque toMovimento(DynamoDbItem item) {
         return new MovimentoEstoque(
-                uuid(item, "movimentoId"),
+                uuid(item, ATTR_MOVIMENTO_ID),
                 uuid(item, ATTR_PECA_ID),
                 optionalUuid(item, ATTR_ORDEM_SERVICO_ID),
                 TipoMovimentoEstoque.valueOf(string(item, "tipo")),
-                integer(item, "quantidade"),
+                integer(item, ATTR_QUANTIDADE),
                 optionalString(item, "motivo"),
                 offsetDateTime(item, ATTR_CREATED_AT));
     }
 
     private Execucao toExecucao(DynamoDbItem item) {
-        return Execucao.reconstituir(
+        return Execucao.reconstituir(new Execucao.Snapshot(
                 uuid(item, ATTR_EXECUCAO_ID),
                 uuid(item, ATTR_ORDEM_SERVICO_ID),
                 integer(item, "prioridade"),
-                StatusExecucao.valueOf(string(item, "status")),
-                optionalString(item, "diagnostico"),
+                StatusExecucao.valueOf(string(item, ATTR_STATUS)),
+                optionalString(item, ATTR_DIAGNOSTICO),
                 optionalString(item, "observacoesReparo"),
                 offsetDateTime(item, ATTR_CREATED_AT),
-                offsetDateTime(item, ATTR_UPDATED_AT));
+                offsetDateTime(item, ATTR_UPDATED_AT)));
     }
 
     @SuppressWarnings("unchecked")
     private OutboxEventRecord toOutboxEvent(DynamoDbItem item) {
         return new OutboxEventRecord(
-                uuid(item, "eventId"),
-                string(item, "eventType"),
-                integer(item, "eventVersion"),
-                string(item, "topic"),
-                string(item, "producer"),
-                string(item, "aggregateId"),
+                uuid(item, ATTR_EVENT_ID),
+                string(item, ATTR_EVENT_TYPE),
+                integer(item, ATTR_EVENT_VERSION),
+                string(item, ATTR_TOPIC),
+                string(item, ATTR_PRODUCER),
+                string(item, ATTR_AGGREGATE_ID),
                 (Map<String, Object>) item.attributes().getOrDefault("payload", Map.of()),
-                OutboxStatus.valueOf(string(item, "status")),
+                OutboxStatus.valueOf(string(item, ATTR_STATUS)),
                 integer(item, "attempts"),
                 optionalOffsetDateTime(item, "nextAttemptAt"),
                 optionalOffsetDateTime(item, "publishedAt"),
-                optionalOffsetDateTime(item, "expiresAt"),
+                optionalOffsetDateTime(item, ATTR_EXPIRES_AT),
                 optionalString(item, "lastError"),
                 string(item, ATTR_CORRELATION_ID),
                 offsetDateTime(item, ATTR_CREATED_AT),
@@ -840,7 +869,7 @@ public class DynamoDbExecutionStore {
                 optionalString(item, "requestId"),
                 offsetDateTime(item, ATTR_CREATED_AT),
                 offsetDateTime(item, ATTR_UPDATED_AT),
-                offsetDateTime(item, "expiresAt"));
+                offsetDateTime(item, ATTR_EXPIRES_AT));
     }
 
     private String idempotencyCorrelationId(DynamoDbItem item) {
@@ -870,10 +899,9 @@ public class DynamoDbExecutionStore {
         var transactionItems = new ArrayList<TransactWriteItem>();
         for (var item : items) {
             transactionItems.add(TransactWriteItem.builder()
-                    .put(Put.builder()
+                    .put(put -> put
                             .tableName(item.tableName())
-                            .item(toAttributeMap(item))
-                            .build())
+                            .item(toAttributeMap(item)))
                     .build());
         }
         dynamoDbClient.transactWriteItems(TransactWriteItemsRequest.builder()
@@ -1109,12 +1137,12 @@ public class DynamoDbExecutionStore {
     private void logEvent(String message, OutboxEventRecord event, String messageStatus) {
         StructuredLog.info(LOG, message, Map.of(
                 ATTR_CORRELATION_ID, event.correlationId(),
-                "eventId", event.eventId().toString(),
-                "eventType", event.eventType(),
-                "eventVersion", event.eventVersion(),
-                "topic", event.topic(),
-                "producer", event.producer(),
-                "aggregateId", event.aggregateId(),
+                ATTR_EVENT_ID, event.eventId().toString(),
+                ATTR_EVENT_TYPE, event.eventType(),
+                ATTR_EVENT_VERSION, event.eventVersion(),
+                ATTR_TOPIC, event.topic(),
+                ATTR_PRODUCER, event.producer(),
+                ATTR_AGGREGATE_ID, event.aggregateId(),
                 "messageStatus", messageStatus));
     }
 
