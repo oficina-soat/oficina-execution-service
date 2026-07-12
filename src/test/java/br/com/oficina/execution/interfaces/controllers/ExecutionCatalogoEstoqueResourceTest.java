@@ -106,6 +106,59 @@ class ExecutionCatalogoEstoqueResourceTest {
     }
 
     @Test
+    void deveRepetirRespostaIdempotenteERejeitarPayloadDivergente() {
+        var idempotencyKey = "servico-replay-" + UUID.randomUUID();
+        var requestBody = """
+                {
+                  "nome": "Higienizacao idempotente",
+                  "descricao": "Higienizacao interna",
+                  "valorBase": 180.0
+                }
+                """;
+
+        var servicoId = given()
+                .header("X-Idempotency-Key", idempotencyKey)
+                .contentType("application/json")
+                .body(requestBody)
+                .when()
+                .post("/api/v1/servicos")
+                .then()
+                .statusCode(201)
+                .body("servicoId", notNullValue())
+                .extract()
+                .path("servicoId")
+                .toString();
+
+        given()
+                .header("X-Idempotency-Key", idempotencyKey)
+                .contentType("application/json")
+                .body(requestBody)
+                .when()
+                .post("/api/v1/servicos")
+                .then()
+                .statusCode(201)
+                .body("servicoId", equalTo(servicoId))
+                .body("nome", equalTo("Higienizacao idempotente"));
+
+        given()
+                .header("X-Idempotency-Key", idempotencyKey)
+                .contentType("application/json")
+                .body("""
+                        {
+                          "nome": "Higienizacao idempotente divergente",
+                          "descricao": "Higienizacao interna",
+                          "valorBase": 180.0
+                        }
+                        """)
+                .when()
+                .post("/api/v1/servicos")
+                .then()
+                .statusCode(409)
+                .body("code", equalTo("IDEMPOTENCY_CONFLICT"))
+                .body("message", equalTo("Chave de idempotencia reutilizada com payload divergente."));
+    }
+
+    @Test
     void deveCriarAtualizarPecaERegistrarMovimentosDeEstoque() {
         var pecaId = given()
                 .header("X-Idempotency-Key", "peca-create-001")

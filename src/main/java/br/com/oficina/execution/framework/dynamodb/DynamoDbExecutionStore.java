@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
@@ -302,14 +303,74 @@ public class DynamoDbExecutionStore {
             Integer responseStatus,
             String responseBody,
             ProcessingStatus status) {
+        return registrarIdempotencia(
+                scope,
+                key,
+                requestHash,
+                responseStatus,
+                responseBody,
+                status,
+                correlationId(null),
+                null,
+                agora().plusDays(1));
+    }
+
+    public IdempotencyRecord registrarIdempotencia(
+            String scope,
+            String key,
+            String requestHash,
+            Integer responseStatus,
+            String responseBody,
+            ProcessingStatus status,
+            String correlationId,
+            String requestId,
+            OffsetDateTime expiresAt) {
         var agora = agora();
-        var idempotencyRecord = new IdempotencyRecord(scope, key, requestHash, responseStatus, responseBody, status, agora, agora, agora.plusDays(1));
+        var idempotencyRecord = new IdempotencyRecord(
+                scope,
+                key,
+                requestHash,
+                responseStatus,
+                responseBody,
+                status,
+                correlationId,
+                requestId,
+                agora,
+                agora,
+                expiresAt);
         put(toItem(idempotencyRecord));
         return idempotencyRecord;
     }
 
+    public Optional<IdempotencyRecord> buscarIdempotencia(String scope, String key) {
+        return getItem(tableNames.idempotencia(), "IDEMPOTENCY#" + scope + "#" + key, "REQUEST")
+                .map(this::toIdempotencyRecord);
+    }
+
     public boolean idempotenciaExiste(String scope, String key) {
         return getItem(tableNames.idempotencia(), "IDEMPOTENCY#" + scope + "#" + key, "REQUEST").isPresent();
+    }
+
+    public void concluirIdempotencia(
+            String scope,
+            String key,
+            ProcessingStatus status,
+            int responseStatus,
+            String responseBody) {
+        var current = buscarIdempotencia(scope, key)
+                .orElseThrow(() -> new IllegalStateException("Registro de idempotencia nao encontrado: " + scope + "/" + key));
+        put(toItem(new IdempotencyRecord(
+                current.scope(),
+                current.key(),
+                current.requestHash(),
+                responseStatus,
+                responseBody,
+                status,
+                current.correlationId(),
+                current.requestId(),
+                current.createdAt(),
+                agora(),
+                current.expiresAt())));
     }
 
     public List<DynamoDbItem> catalogoItems() {
@@ -612,6 +673,8 @@ public class DynamoDbExecutionStore {
                         "responseStatus", idempotencyRecord.responseStatus(),
                         "responseBody", idempotencyRecord.responseBody(),
                         "processingStatus", idempotencyRecord.processingStatus(),
+                        ATTR_CORRELATION_ID, idempotencyRecord.correlationId(),
+                        "requestId", idempotencyRecord.requestId(),
                         ATTR_CREATED_AT, idempotencyRecord.createdAt(),
                         ATTR_UPDATED_AT, idempotencyRecord.updatedAt(),
                         "expiresAt", idempotencyRecord.expiresAt()));
@@ -688,6 +751,26 @@ public class DynamoDbExecutionStore {
                 string(item, ATTR_CORRELATION_ID),
                 offsetDateTime(item, ATTR_CREATED_AT),
                 offsetDateTime(item, ATTR_UPDATED_AT));
+    }
+
+    private IdempotencyRecord toIdempotencyRecord(DynamoDbItem item) {
+        return new IdempotencyRecord(
+                string(item, "scope"),
+                string(item, "key"),
+                string(item, "requestHash"),
+                optionalInteger(item, "responseStatus"),
+                optionalString(item, "responseBody"),
+                ProcessingStatus.valueOf(string(item, "processingStatus")),
+                idempotencyCorrelationId(item),
+                optionalString(item, "requestId"),
+                offsetDateTime(item, ATTR_CREATED_AT),
+                offsetDateTime(item, ATTR_UPDATED_AT),
+                offsetDateTime(item, "expiresAt"));
+    }
+
+    private String idempotencyCorrelationId(DynamoDbItem item) {
+        var correlationId = optionalString(item, ATTR_CORRELATION_ID);
+        return correlationId == null || correlationId.isBlank() ? correlationId(null) : correlationId;
     }
 
     private Map<String, Object> attributes(Object... entries) {
@@ -872,6 +955,17 @@ public class DynamoDbExecutionStore {
 
     private int integer(DynamoDbItem item, String name) {
         var value = item.attributes().get(name);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return Integer.parseInt(value.toString());
+    }
+
+    private Integer optionalInteger(DynamoDbItem item, String name) {
+        var value = item.attributes().get(name);
+        if (value == null) {
+            return null;
+        }
         if (value instanceof Number number) {
             return number.intValue();
         }

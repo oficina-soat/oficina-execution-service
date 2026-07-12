@@ -100,6 +100,19 @@ class DynamoDbExecutionStoreTest {
 
         assertEquals("diagnosticoIniciado", event.eventType());
         assertEquals(ProcessingStatus.COMPLETED, idempotencia.processingStatus());
+        assertTrue(idempotencia.correlationId().startsWith("local-"));
+
+        store.concluirIdempotencia(
+                idempotencia.scope(),
+                idempotencia.key(),
+                ProcessingStatus.FAILED_FINAL,
+                409,
+                "{\"code\":\"IDEMPOTENCY_CONFLICT\"}");
+        var concluida = store.buscarIdempotencia(idempotencia.scope(), idempotencia.key()).orElseThrow();
+        assertEquals(ProcessingStatus.FAILED_FINAL, concluida.processingStatus());
+        assertEquals(409, concluida.responseStatus());
+        assertEquals("{\"code\":\"IDEMPOTENCY_CONFLICT\"}", concluida.responseBody());
+        assertEquals(idempotencia.correlationId(), concluida.correlationId());
 
         assertTrue(store.outboxItems().stream().anyMatch(item ->
                 item.tableName().equals(tableNames.outbox())
@@ -112,7 +125,8 @@ class DynamoDbExecutionStoreTest {
                 item.tableName().equals(tableNames.idempotencia())
                         && item.pk().equals("IDEMPOTENCY#POST /api/v1/execucoes#request-1")
                         && item.sk().equals("REQUEST")
-                        && item.attributes().get("processingStatus").toString().equals("COMPLETED")));
+                        && item.attributes().get("processingStatus").toString().equals("FAILED_FINAL")
+                        && item.attributes().containsKey("correlationId")));
     }
 
     @Test
