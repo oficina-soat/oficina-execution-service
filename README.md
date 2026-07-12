@@ -35,6 +35,21 @@ A persistência runtime usa `DynamoDbClient` síncrono com as tabelas definidas 
 
 Os testes do serviço sobem DynamoDB Local via Testcontainers, criam as cinco tabelas canônicas com os GSIs esperados e exercitam as APIs HTTP, o consumo de eventos e os mapeamentos técnicos sem depender de estruturas em memória como persistência principal.
 
+## Mensageria SNS/SQS
+
+O serviço publica eventos de diagnóstico, execução e estoque exclusivamente pela Outbox DynamoDB. Quando `OFICINA_MESSAGING_ENABLED=true`, o worker assíncrono publica pendentes no SNS canônico, aplica retry/backoff, marca `PUBLISHED` após sucesso e marca `FAILED` ao esgotar tentativas. O consumo usa filas SQS por tópico/consumidor e só remove a mensagem depois que a idempotência e o processamento local são persistidos no DynamoDB.
+
+Configuração principal:
+
+- `OFICINA_MESSAGING_ENABLED`
+- `OFICINA_MESSAGING_ENDPOINT_OVERRIDE`, para LocalStack
+- `OFICINA_MESSAGING_PUBLISHER_BATCH_SIZE`
+- `OFICINA_MESSAGING_PUBLISHER_MAX_ATTEMPTS`
+- `OFICINA_MESSAGING_CONSUMER_MAX_MESSAGES`
+- `OFICINA_MESSAGING_CONSUMER_WAIT_TIME_SECONDS`
+
+Os nomes físicos de tópicos e filas seguem o padrão do `oficina-infra`: pontos do tópico canônico são trocados por hífen, e filas consumidoras usam `<topico>.<servico-consumidor>`. A validação local de publicação e consumo SNS/SQS fica em [SnsSqsMessagingIntegrationTest](src/test/java/br/com/oficina/execution/framework/messaging/SnsSqsMessagingIntegrationTest.java), com LocalStack e DynamoDB Local via Testcontainers.
+
 ## Setup local
 
 Pré-requisitos:
@@ -172,4 +187,4 @@ src/main/java/br/com/oficina/execution/
 
 ## Próximo Trabalho
 
-O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados no Épico B2 são configurar a proteção da branch `main` e manter a documentação local atualizada conforme novos manifests, variáveis e evidências forem materializados, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
+O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados no Épico B2 são configurar a proteção da branch `main`, impedir fallback silencioso em runtime e manter a documentação local atualizada conforme novos manifests, variáveis e evidências forem materializados, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).

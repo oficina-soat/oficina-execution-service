@@ -112,11 +112,11 @@ class ExecutionExecucoesResourceTest {
         assertTrue(store.outboxEvents().stream().anyMatch(event ->
                 event.eventType().equals("diagnosticoIniciado")
                         && event.topic().equals("oficina.execution.diagnostico-iniciado")
-                        && event.payload().get("statusExecucao").toString().equals("EM_DIAGNOSTICO")));
+                        && "EM_DIAGNOSTICO".equals(String.valueOf(event.payload().get("statusExecucao")))));
         assertTrue(store.outboxEvents().stream().anyMatch(event ->
                 event.eventType().equals("execucaoFinalizada")
                         && event.topic().equals("oficina.execution.execucao-finalizada")
-                        && event.payload().get("statusExecucao").toString().equals("REPARO_CONCLUIDO")));
+                        && "REPARO_CONCLUIDO".equals(String.valueOf(event.payload().get("statusExecucao")))));
     }
 
     @Test

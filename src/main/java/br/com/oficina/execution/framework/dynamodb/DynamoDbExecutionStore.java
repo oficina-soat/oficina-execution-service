@@ -401,6 +401,78 @@ public class DynamoDbExecutionStore {
                 .toList();
     }
 
+    public List<OutboxEventRecord> listarOutboxPendenteParaPublicacao(int limit) {
+        var now = agora();
+        return outboxEvents().stream()
+                .filter(event -> event.status() == OutboxStatus.PENDING)
+                .filter(event -> event.nextAttemptAt() == null
+                        || event.nextAttemptAt().isBefore(now)
+                        || event.nextAttemptAt().isEqual(now))
+                .limit(Math.max(1, limit))
+                .toList();
+    }
+
+    public OutboxEventRecord marcarOutboxPublicado(UUID eventId) {
+        var current = buscarOutbox(eventId);
+        var now = agora();
+        var updated = new OutboxEventRecord(
+                current.eventId(),
+                current.eventType(),
+                current.eventVersion(),
+                current.topic(),
+                current.producer(),
+                current.aggregateId(),
+                current.payload(),
+                OutboxStatus.PUBLISHED,
+                current.attempts() + 1,
+                null,
+                now,
+                now.plusDays(7),
+                null,
+                current.correlationId(),
+                current.createdAt(),
+                now);
+        put(toItem(updated));
+        logEvent("outbox event published", updated, "PUBLISHED");
+        return updated;
+    }
+
+    public OutboxEventRecord marcarFalhaPublicacao(
+            UUID eventId,
+            String lastError,
+            OffsetDateTime nextAttemptAt,
+            boolean failed) {
+        var current = buscarOutbox(eventId);
+        var now = agora();
+        var status = failed ? OutboxStatus.FAILED : OutboxStatus.PENDING;
+        var updated = new OutboxEventRecord(
+                current.eventId(),
+                current.eventType(),
+                current.eventVersion(),
+                current.topic(),
+                current.producer(),
+                current.aggregateId(),
+                current.payload(),
+                status,
+                current.attempts() + 1,
+                failed ? null : nextAttemptAt,
+                null,
+                null,
+                lastError,
+                current.correlationId(),
+                current.createdAt(),
+                now);
+        put(toItem(updated));
+        logEvent("outbox event publication failed", updated, status.name());
+        return updated;
+    }
+
+    private OutboxEventRecord buscarOutbox(UUID eventId) {
+        return getItem(tableNames.outbox(), "OUTBOX#" + eventId, "EVENT")
+                .map(this::toOutboxEvent)
+                .orElseThrow(() -> new IllegalStateException("Evento de Outbox nao encontrado: " + eventId));
+    }
+
     private void salvarServico(Servico servico) {
         put(toItem(servico));
     }
@@ -465,6 +537,7 @@ public class DynamoDbExecutionStore {
                 OutboxStatus.PENDING,
                 0,
                 agora,
+                null,
                 null,
                 null,
                 correlationId(correlationId),
@@ -655,6 +728,7 @@ public class DynamoDbExecutionStore {
                         "nextAttemptAt", event.nextAttemptAt(),
                         "publishedAt", event.publishedAt(),
                         "expiresAt", event.expiresAt(),
+                        "lastError", event.lastError(),
                         ATTR_CORRELATION_ID, event.correlationId(),
                         ATTR_CREATED_AT, event.createdAt(),
                         ATTR_UPDATED_AT, event.updatedAt()));
@@ -748,6 +822,7 @@ public class DynamoDbExecutionStore {
                 optionalOffsetDateTime(item, "nextAttemptAt"),
                 optionalOffsetDateTime(item, "publishedAt"),
                 optionalOffsetDateTime(item, "expiresAt"),
+                optionalString(item, "lastError"),
                 string(item, ATTR_CORRELATION_ID),
                 offsetDateTime(item, ATTR_CREATED_AT),
                 offsetDateTime(item, ATTR_UPDATED_AT));

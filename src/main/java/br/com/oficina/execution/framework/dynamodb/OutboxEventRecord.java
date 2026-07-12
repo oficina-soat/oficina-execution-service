@@ -18,6 +18,7 @@ public record OutboxEventRecord(
         OffsetDateTime nextAttemptAt,
         OffsetDateTime publishedAt,
         OffsetDateTime expiresAt,
+        String lastError,
         String correlationId,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt) {
