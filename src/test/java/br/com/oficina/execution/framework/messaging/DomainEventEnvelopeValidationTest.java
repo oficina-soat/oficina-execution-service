@@ -37,7 +37,8 @@ class DomainEventEnvelopeValidationTest {
 
         assertEquals("CRIADA", envelope.payload().get("status"));
         assertTrue(envelope(UUID.randomUUID(), "execucaoIniciada", 1, NOW, "oficina-execution-service", "aggregate", null).payload().isEmpty());
-        assertThrows(UnsupportedOperationException.class, () -> envelope.payload().put("novo", "valor"));
+        var envelopePayload = envelope.payload();
+        assertThrows(UnsupportedOperationException.class, () -> envelopePayload.put("novo", "valor"));
     }
 
     private static DomainEventEnvelope envelope(
