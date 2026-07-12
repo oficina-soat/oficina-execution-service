@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbLocalTestResource;
+import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import java.util.List;
@@ -17,6 +19,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
+@QuarkusTestResource(DynamoDbLocalTestResource.class)
 class ExecutionExecucoesResourceTest {
     @Inject
     DynamoDbExecutionStore store;
@@ -109,11 +112,11 @@ class ExecutionExecucoesResourceTest {
         assertTrue(store.outboxEvents().stream().anyMatch(event ->
                 event.eventType().equals("diagnosticoIniciado")
                         && event.topic().equals("oficina.execution.diagnostico-iniciado")
-                        && event.payload().get("statusExecucao").toString().equals("EM_DIAGNOSTICO")));
+                        && "EM_DIAGNOSTICO".equals(String.valueOf(event.payload().get("statusExecucao")))));
         assertTrue(store.outboxEvents().stream().anyMatch(event ->
                 event.eventType().equals("execucaoFinalizada")
                         && event.topic().equals("oficina.execution.execucao-finalizada")
-                        && event.payload().get("statusExecucao").toString().equals("REPARO_CONCLUIDO")));
+                        && "REPARO_CONCLUIDO".equals(String.valueOf(event.payload().get("statusExecucao")))));
     }
 
     @Test

@@ -5,6 +5,7 @@ import br.com.oficina.execution.interfaces.presenters.PecaPresenterAdapter;
 import br.com.oficina.execution.interfaces.presenters.ServicoPresenterAdapter;
 import br.com.oficina.execution.interfaces.presenters.view_model.PecaViewModel;
 import br.com.oficina.execution.interfaces.presenters.view_model.ServicoViewModel;
+import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
@@ -28,6 +29,7 @@ import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
+@Blocking
 public class CatalogoResource {
     private final CatalogoController catalogoController;
     private final ServicoPresenterAdapter servicoPresenter;

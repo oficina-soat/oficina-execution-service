@@ -7,11 +7,14 @@ import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.notNullValue;
 
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbLocalTestResource;
+import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
+@QuarkusTestResource(DynamoDbLocalTestResource.class)
 class ExecutionCatalogoEstoqueResourceTest {
     @Test
     void deveConsultarSeedsDeCatalogoESaldo() {
@@ -100,6 +103,59 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .then()
                 .statusCode(200)
                 .body("size()", greaterThanOrEqualTo(2));
+    }
+
+    @Test
+    void deveRepetirRespostaIdempotenteERejeitarPayloadDivergente() {
+        var idempotencyKey = "servico-replay-" + UUID.randomUUID();
+        var requestBody = """
+                {
+                  "nome": "Higienizacao idempotente",
+                  "descricao": "Higienizacao interna",
+                  "valorBase": 180.0
+                }
+                """;
+
+        var servicoId = given()
+                .header("X-Idempotency-Key", idempotencyKey)
+                .contentType("application/json")
+                .body(requestBody)
+                .when()
+                .post("/api/v1/servicos")
+                .then()
+                .statusCode(201)
+                .body("servicoId", notNullValue())
+                .extract()
+                .path("servicoId")
+                .toString();
+
+        given()
+                .header("X-Idempotency-Key", idempotencyKey)
+                .contentType("application/json")
+                .body(requestBody)
+                .when()
+                .post("/api/v1/servicos")
+                .then()
+                .statusCode(201)
+                .body("servicoId", equalTo(servicoId))
+                .body("nome", equalTo("Higienizacao idempotente"));
+
+        given()
+                .header("X-Idempotency-Key", idempotencyKey)
+                .contentType("application/json")
+                .body("""
+                        {
+                          "nome": "Higienizacao idempotente divergente",
+                          "descricao": "Higienizacao interna",
+                          "valorBase": 180.0
+                        }
+                        """)
+                .when()
+                .post("/api/v1/servicos")
+                .then()
+                .statusCode(409)
+                .body("code", equalTo("IDEMPOTENCY_CONFLICT"))
+                .body("message", equalTo("Chave de idempotencia reutilizada com payload divergente."));
     }
 
     @Test

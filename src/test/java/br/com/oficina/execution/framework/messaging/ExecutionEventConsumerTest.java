@@ -6,16 +6,49 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
+import br.com.oficina.execution.framework.dynamodb.DynamoDbLocalTestSupport;
 import br.com.oficina.execution.framework.dynamodb.DynamoDbTableNames;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.GenericContainer;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
 class ExecutionEventConsumerTest {
-    private final DynamoDbExecutionStore store = new DynamoDbExecutionStore(new DynamoDbTableNames("oficina-execution-lab"));
-    private final ExecutionEventConsumer consumer = new ExecutionEventConsumer(store);
+    private static GenericContainer<?> container;
+    private static DynamoDbClient client;
+
+    private DynamoDbExecutionStore store;
+    private ExecutionEventConsumer consumer;
+
+    @BeforeAll
+    static void startDynamoDb() {
+        container = DynamoDbLocalTestSupport.startContainer();
+        client = DynamoDbLocalTestSupport.client(DynamoDbLocalTestSupport.endpoint(container));
+    }
+
+    @AfterAll
+    static void stopDynamoDb() {
+        if (client != null) {
+            client.close();
+        }
+        if (container != null) {
+            container.stop();
+        }
+    }
+
+    @BeforeEach
+    void setUp() {
+        var tableNames = new DynamoDbTableNames("oficina-execution-event-" + UUID.randomUUID().toString().substring(0, 8));
+        DynamoDbLocalTestSupport.createTables(client, tableNames);
+        store = new DynamoDbExecutionStore(tableNames, client);
+        consumer = new ExecutionEventConsumer(store);
+    }
 
     @Test
     void deveConsumirEventoCriandoExecucaoComIdempotencia() {

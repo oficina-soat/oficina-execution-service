@@ -16,7 +16,7 @@ O serviço não é dono de Cliente, Veículo, estado global da Ordem de Serviço
 
 ## Saga orquestrada
 
-A plataforma usa **Saga orquestrada** pelo `oficina-os-service`, conforme a [ADR-009 - Estratégia de Saga Pattern](../oficina-platform/adr/ADR-009%20-%20Estratégia%20de%20Saga%20Pattern.md), os [Fluxos da Saga da Ordem de Serviço](../oficina-platform/docs/saga-flows.md) e o [Contrato de Saga do oficina-os-service](../oficina-platform/contracts/saga/oficina-os-saga-v1.md).
+A plataforma usa **Saga orquestrada** pelo `oficina-os-service`, conforme a [ADR-009 - Estratégia de Saga Pattern](../oficina-platform/adr/ADR-009%20-%20Estratégia%20de%20Saga%20Pattern.md), os [Fluxos da Saga da Ordem de Serviço](../oficina-platform/docs/architecture/saga-flows.md) e o [Contrato de Saga do oficina-os-service](../oficina-platform/contracts/saga/oficina-os-saga-v1.md).
 
 O `oficina-os-service` foi escolhido como orquestrador porque é a autoridade sobre o estado global da Ordem de Serviço e concentra a sequência distribuída do processo. Essa escolha mantém o fluxo explícito, melhora a rastreabilidade e evita que compensações fiquem dispersas entre os serviços participantes.
 
@@ -29,6 +29,27 @@ O `oficina-execution-service` participa da Saga como autoridade operacional. Ele
 - Amazon DynamoDB
 - JWT, OpenAPI, Health, métricas Prometheus, logs JSON e OpenTelemetry
 
+## Persistência
+
+A persistência runtime usa `DynamoDbClient` síncrono com as tabelas definidas no [Padrão DynamoDB do oficina-execution-service](../oficina-platform/docs/infrastructure/dynamodb-execution-service.md). O store grava e lê catálogo, estoque, execuções, Outbox e idempotência no DynamoDB, mantendo os itens canônicos `PK`, `SK`, `entityType` e os atributos necessários aos GSIs documentados.
+
+Os testes do serviço sobem DynamoDB Local via Testcontainers, criam as cinco tabelas canônicas com os GSIs esperados e exercitam as APIs HTTP, o consumo de eventos e os mapeamentos técnicos sem depender de estruturas em memória como persistência principal.
+
+## Mensageria SNS/SQS
+
+O serviço publica eventos de diagnóstico, execução e estoque exclusivamente pela Outbox DynamoDB. Quando `OFICINA_MESSAGING_ENABLED=true`, o worker assíncrono publica pendentes no SNS canônico, aplica retry/backoff, marca `PUBLISHED` após sucesso e marca `FAILED` ao esgotar tentativas. O consumo usa filas SQS por tópico/consumidor e só remove a mensagem depois que a idempotência e o processamento local são persistidos no DynamoDB.
+
+Configuração principal:
+
+- `OFICINA_MESSAGING_ENABLED`
+- `OFICINA_MESSAGING_ENDPOINT_OVERRIDE`, para LocalStack
+- `OFICINA_MESSAGING_PUBLISHER_BATCH_SIZE`
+- `OFICINA_MESSAGING_PUBLISHER_MAX_ATTEMPTS`
+- `OFICINA_MESSAGING_CONSUMER_MAX_MESSAGES`
+- `OFICINA_MESSAGING_CONSUMER_WAIT_TIME_SECONDS`
+
+Os nomes físicos de tópicos e filas seguem o padrão do `oficina-infra`: pontos do tópico canônico são trocados por hífen, e filas consumidoras usam `<topico>.<servico-consumidor>`. A validação local de publicação e consumo SNS/SQS fica em [SnsSqsMessagingIntegrationTest](src/test/java/br/com/oficina/execution/framework/messaging/SnsSqsMessagingIntegrationTest.java), com LocalStack e DynamoDB Local via Testcontainers.
+
 ## Setup local
 
 Pré-requisitos:
@@ -38,7 +59,7 @@ Pré-requisitos:
 - acesso ao repositório `../oficina-platform`, usado pelos testes de contrato;
 - acesso opcional ao repositório `../oficina-infra`, usado para subir dependências compartilhadas da suíte.
 
-Ferramentas locais recomendadas para validação de CI/CD, Dockerfile e scripts estão em [Ferramentas de validação local](../oficina-platform/docs/validation-tooling.md).
+Ferramentas locais recomendadas para validação de CI/CD, Dockerfile e scripts estão em [Ferramentas de validação local](../oficina-platform/docs/delivery/validation-tooling.md).
 
 Dependências locais compartilhadas podem ser iniciadas pelo `oficina-infra`:
 
@@ -69,12 +90,12 @@ O comando `verify` executa testes unitários, integração, contrato e verifica�
 
 O JaCoCo é executado no `verify`, gera relatório em `target/jacoco-report/` e falha o build quando a cobertura de instruções do bundle fica abaixo de 80%. O [Template GitHub Actions para Microsserviços](../oficina-platform/templates/github-actions/README.md) publica esse diretório como artifact `jacoco-report-oficina-execution-service` e envia `target/jacoco-report/jacoco.xml` ao SonarCloud.
 
-Evidência local de cobertura em 2026-07-01:
+Evidência local de cobertura em 2026-07-11:
 
 ```text
-./mvnw -B verify -Pdynamodb -DskipITs=false -DfailIfNoTests=false
-instruction=90.85% branch=68.17% line=90.69% complexity=72.85%
-Tests run: 33, Failures: 0, Errors: 0, Skipped: 0
+./mvnw -B clean verify -Pdynamodb -DskipITs=false -DfailIfNoTests=false
+instruction=91.03% branch=69.74% line=91.47% complexity=78.27%
+Tests run: 51, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
@@ -108,7 +129,7 @@ docker run --rm -p 8080:8080 oficina-execution-service:local
 
 ## Kubernetes
 
-A estratégia de entrega dos manifests está definida em [Estratégia de entrega dos manifestos Kubernetes](../oficina-platform/docs/kubernetes-manifest-strategy.md).
+A estratégia de entrega dos manifests está definida em [Estratégia de entrega dos manifestos Kubernetes](../oficina-platform/docs/infrastructure/kubernetes-manifest-strategy.md).
 
 Este repositório mantém o Dockerfile do serviço e não mantém cópia executável dos manifests Kubernetes para evitar divergência. A referência normativa do serviço fica em [Template Kubernetes do oficina-execution-service](../oficina-platform/templates/kubernetes/base/oficina-execution-service/), e o destino canônico de deploy é `../oficina-infra/k8s/base/microservices/oficina-execution-service/`.
 
@@ -140,7 +161,7 @@ O teste [PlatformContractsTest](src/test/java/br/com/oficina/execution/contracts
 - [Contrato de Tópicos de Mensageria](../oficina-platform/contracts/Contrato%20de%20Tópicos%20de%20Mensageria.md)
 - [Contrato de Erros REST](../oficina-platform/contracts/error-model.md)
 - [Contrato de Idempotência](../oficina-platform/contracts/idempotency.md)
-- [Padrão DynamoDB do oficina-execution-service](../oficina-platform/docs/dynamodb-execution-service.md)
+- [Padrão DynamoDB do oficina-execution-service](../oficina-platform/docs/infrastructure/dynamodb-execution-service.md)
 
 ## Variáveis principais
 
@@ -166,4 +187,4 @@ src/main/java/br/com/oficina/execution/
 
 ## Próximo Trabalho
 
-O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados no Épico B2 são configurar a proteção da branch `main` e manter a documentação local atualizada conforme novos manifests, variáveis e evidências forem materializados, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
+O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados no Épico B2 são configurar a proteção da branch `main`, impedir fallback silencioso em runtime e manter a documentação local atualizada conforme novos manifests, variáveis e evidências forem materializados, mantendo alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).

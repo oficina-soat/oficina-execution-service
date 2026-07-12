@@ -6,6 +6,7 @@ import br.com.oficina.execution.interfaces.presenters.MovimentoEstoquePresenterA
 import br.com.oficina.execution.interfaces.presenters.SaldoEstoquePresenterAdapter;
 import br.com.oficina.execution.interfaces.presenters.view_model.MovimentoEstoqueViewModel;
 import br.com.oficina.execution.interfaces.presenters.view_model.SaldoEstoqueViewModel;
+import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
@@ -30,6 +31,7 @@ import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
+@Blocking
 public class EstoqueResource {
     private final EstoqueController estoqueController;
     private final SaldoEstoquePresenterAdapter saldoPresenter;

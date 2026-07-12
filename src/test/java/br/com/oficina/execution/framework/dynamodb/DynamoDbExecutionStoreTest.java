@@ -7,27 +7,59 @@ import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.GenericContainer;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 
 class DynamoDbExecutionStoreTest {
-    private final DynamoDbExecutionStore store = new DynamoDbExecutionStore(new DynamoDbTableNames("oficina-execution-lab"));
+    private static GenericContainer<?> container;
+    private static DynamoDbClient client;
+
+    private DynamoDbTableNames tableNames;
+    private DynamoDbExecutionStore store;
+
+    @BeforeAll
+    static void startDynamoDb() {
+        container = DynamoDbLocalTestSupport.startContainer();
+        client = DynamoDbLocalTestSupport.client(DynamoDbLocalTestSupport.endpoint(container));
+    }
+
+    @AfterAll
+    static void stopDynamoDb() {
+        if (client != null) {
+            client.close();
+        }
+        if (container != null) {
+            container.stop();
+        }
+    }
+
+    @BeforeEach
+    void setUp() {
+        tableNames = new DynamoDbTableNames("oficina-execution-unit-" + UUID.randomUUID().toString().substring(0, 8));
+        DynamoDbLocalTestSupport.createTables(client, tableNames);
+        store = new DynamoDbExecutionStore(tableNames, client);
+    }
 
     @Test
     void deveMaterializarSeedsComChavesCanonicasDoDynamoDb() {
         assertTrue(store.catalogoItems().stream().anyMatch(item ->
-                item.tableName().equals("oficina-execution-lab-catalogo")
+                item.tableName().equals(tableNames.catalogo())
                         && item.pk().equals("PECA#" + DynamoDbExecutionStore.SEED_PECA_ID)
                         && item.sk().equals("METADATA")
                         && item.entityType().equals("PECA")));
 
         assertTrue(store.catalogoItems().stream().anyMatch(item ->
-                item.tableName().equals("oficina-execution-lab-catalogo")
+                item.tableName().equals(tableNames.catalogo())
                         && item.pk().equals("SERVICO#" + DynamoDbExecutionStore.SEED_SERVICO_ID)
                         && item.sk().equals("METADATA")
                         && item.entityType().equals("SERVICO")));
 
         assertTrue(store.estoqueItems().stream().anyMatch(item ->
-                item.tableName().equals("oficina-execution-lab-estoque")
+                item.tableName().equals(tableNames.estoque())
                         && item.pk().equals("PECA#" + DynamoDbExecutionStore.SEED_PECA_ID)
                         && item.sk().equals("SALDO")
                         && item.attributes().get("quantidadeDisponivel").equals(50)));
@@ -68,18 +100,33 @@ class DynamoDbExecutionStoreTest {
 
         assertEquals("diagnosticoIniciado", event.eventType());
         assertEquals(ProcessingStatus.COMPLETED, idempotencia.processingStatus());
+        assertTrue(idempotencia.correlationId().startsWith("local-"));
+
+        store.concluirIdempotencia(
+                idempotencia.scope(),
+                idempotencia.key(),
+                ProcessingStatus.FAILED_FINAL,
+                409,
+                "{\"code\":\"IDEMPOTENCY_CONFLICT\"}");
+        var concluida = store.buscarIdempotencia(idempotencia.scope(), idempotencia.key()).orElseThrow();
+        assertEquals(ProcessingStatus.FAILED_FINAL, concluida.processingStatus());
+        assertEquals(409, concluida.responseStatus());
+        assertEquals("{\"code\":\"IDEMPOTENCY_CONFLICT\"}", concluida.responseBody());
+        assertEquals(idempotencia.correlationId(), concluida.correlationId());
 
         assertTrue(store.outboxItems().stream().anyMatch(item ->
-                item.tableName().equals("oficina-execution-lab-outbox")
+                item.tableName().equals(tableNames.outbox())
                         && item.pk().equals("OUTBOX#" + event.eventId())
                         && item.sk().equals("EVENT")
-                        && item.attributes().get("status").toString().equals("PENDING")));
+                        && item.attributes().get("status").toString().equals("PENDING")
+                        && item.attributes().containsKey("nextAttemptAt")));
 
         assertTrue(store.idempotenciaItems().stream().anyMatch(item ->
-                item.tableName().equals("oficina-execution-lab-idempotencia")
+                item.tableName().equals(tableNames.idempotencia())
                         && item.pk().equals("IDEMPOTENCY#POST /api/v1/execucoes#request-1")
                         && item.sk().equals("REQUEST")
-                        && item.attributes().get("processingStatus").toString().equals("COMPLETED")));
+                        && item.attributes().get("processingStatus").toString().equals("FAILED_FINAL")
+                        && item.attributes().containsKey("correlationId")));
     }
 
     @Test

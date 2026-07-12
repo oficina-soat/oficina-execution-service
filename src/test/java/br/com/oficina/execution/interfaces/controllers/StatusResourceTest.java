@@ -4,10 +4,13 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
+import br.com.oficina.execution.framework.dynamodb.DynamoDbLocalTestResource;
+import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
+@QuarkusTestResource(DynamoDbLocalTestResource.class)
 class StatusResourceTest {
     @Test
     void shouldExposeServiceStatusAndCorrelationId() {
