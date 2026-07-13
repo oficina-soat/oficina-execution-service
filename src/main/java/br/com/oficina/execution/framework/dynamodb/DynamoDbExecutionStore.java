@@ -12,7 +12,10 @@ import br.com.oficina.execution.core.exceptions.ResourceNotFoundException;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import br.com.oficina.execution.framework.dynamodb.OutboxEventRecord.OutboxStatus;
 import br.com.oficina.execution.framework.observability.StructuredLog;
+import br.com.oficina.execution.framework.observability.OperationalMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -86,10 +89,23 @@ public class DynamoDbExecutionStore {
 
     private final DynamoDbTableNames tableNames;
     private final DynamoDbClient dynamoDbClient;
+    private final OperationalMetrics metrics;
 
     public DynamoDbExecutionStore(DynamoDbTableNames tableNames, DynamoDbClient dynamoDbClient) {
+        this(
+                tableNames,
+                dynamoDbClient,
+                new OperationalMetrics(new SimpleMeterRegistry(), "oficina-execution-service"));
+    }
+
+    @Inject
+    public DynamoDbExecutionStore(
+            DynamoDbTableNames tableNames,
+            DynamoDbClient dynamoDbClient,
+            OperationalMetrics metrics) {
         this.tableNames = tableNames;
         this.dynamoDbClient = dynamoDbClient;
+        this.metrics = metrics;
         aplicarSeedLimpo();
     }
 
@@ -889,10 +905,11 @@ public class DynamoDbExecutionStore {
     }
 
     private void put(DynamoDbItem item) {
-        dynamoDbClient.putItem(PutItemRequest.builder()
-                .tableName(item.tableName())
-                .item(toAttributeMap(item))
-                .build());
+        metrics.persistence("dynamodb", resource(item.tableName()), "put", () -> dynamoDbClient.putItem(
+                PutItemRequest.builder()
+                        .tableName(item.tableName())
+                        .item(toAttributeMap(item))
+                        .build()));
     }
 
     private void transactPut(DynamoDbItem... items) {
@@ -904,18 +921,20 @@ public class DynamoDbExecutionStore {
                             .item(toAttributeMap(item)))
                     .build());
         }
-        dynamoDbClient.transactWriteItems(TransactWriteItemsRequest.builder()
-                .transactItems(transactionItems)
-                .build());
+        metrics.persistence("dynamodb", "transaction", "transact_write", () -> dynamoDbClient.transactWriteItems(
+                TransactWriteItemsRequest.builder()
+                        .transactItems(transactionItems)
+                        .build()));
     }
 
     private java.util.Optional<DynamoDbItem> getItem(String tableName, String pk, String sk) {
-        var response = dynamoDbClient.getItem(GetItemRequest.builder()
-                .tableName(tableName)
-                .key(Map.of(
-                        ATTR_PK, AttributeValue.fromS(pk),
-                        ATTR_SK, AttributeValue.fromS(sk)))
-                .build());
+        var response = metrics.persistence("dynamodb", resource(tableName), "get", () -> dynamoDbClient.getItem(
+                GetItemRequest.builder()
+                        .tableName(tableName)
+                        .key(Map.of(
+                                ATTR_PK, AttributeValue.fromS(pk),
+                                ATTR_SK, AttributeValue.fromS(sk)))
+                        .build()));
         if (!response.hasItem() || response.item().isEmpty()) {
             return java.util.Optional.empty();
         }
@@ -923,6 +942,10 @@ public class DynamoDbExecutionStore {
     }
 
     private List<DynamoDbItem> scan(String tableName) {
+        return metrics.persistence("dynamodb", resource(tableName), "scan", () -> scanBlocking(tableName));
+    }
+
+    private List<DynamoDbItem> scanBlocking(String tableName) {
         var items = new ArrayList<DynamoDbItem>();
         Map<String, AttributeValue> startKey = null;
         do {
@@ -935,6 +958,25 @@ public class DynamoDbExecutionStore {
             startKey = response.lastEvaluatedKey();
         } while (startKey != null && !startKey.isEmpty());
         return List.copyOf(items);
+    }
+
+    private String resource(String tableName) {
+        if (tableName.equals(tableNames.catalogo())) {
+            return "catalogo";
+        }
+        if (tableName.equals(tableNames.estoque())) {
+            return "estoque";
+        }
+        if (tableName.equals(tableNames.execucoes())) {
+            return "execucoes";
+        }
+        if (tableName.equals(tableNames.outbox())) {
+            return "outbox";
+        }
+        if (tableName.equals(tableNames.idempotencia())) {
+            return "idempotency";
+        }
+        return "other";
     }
 
     private Map<String, AttributeValue> toAttributeMap(DynamoDbItem item) {
