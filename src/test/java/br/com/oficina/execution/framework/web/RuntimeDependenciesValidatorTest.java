@@ -66,8 +66,11 @@ class RuntimeDependenciesValidatorTest {
         values.put(RuntimeDependenciesValidator.MESSAGING_ENDPOINT_OVERRIDE, "http://localhost:4566");
         values.put(RuntimeDependenciesValidator.AWS_ACCESS_KEY_ID, "access");
 
-        var exception = assertThrows(IllegalStateException.class, () -> RuntimeDependenciesValidator.validar(
-                List.of("prod"), values, () -> { }, () -> { }));
+        var profiles = List.of("prod");
+        Runnable noOp = () -> { };
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> RuntimeDependenciesValidator.validar(profiles, values, noOp, noOp));
 
         assertTrue(exception.getMessage().contains(RuntimeDependenciesValidator.DYNAMODB_REGION));
         assertTrue(exception.getMessage().contains(RuntimeDependenciesValidator.DYNAMODB_TABLE_PREFIX));
@@ -107,19 +110,24 @@ class RuntimeDependenciesValidatorTest {
         var values = new HashMap<>(validValues());
         values.put(RuntimeDependenciesValidator.AWS_SESSION_TOKEN, "token");
 
-        var exception = assertThrows(IllegalStateException.class, () -> RuntimeDependenciesValidator.validar(
-                List.of("lab"), values, () -> { }, () -> { }));
+        var profiles = List.of("lab");
+        Runnable noOp = () -> { };
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> RuntimeDependenciesValidator.validar(profiles, values, noOp, noOp));
 
         assertTrue(exception.getMessage().contains("credenciais AWS estaticas"));
     }
 
     @Test
     void devePropagarFalhaDoDynamoDbComContexto() {
-        var exception = assertThrows(IllegalStateException.class, () -> RuntimeDependenciesValidator.validar(
-                List.of("prod"),
-                validValues(),
-                () -> { throw new IllegalArgumentException("dynamodb indisponivel"); },
-                () -> { }));
+        var profiles = List.of("prod");
+        var values = validValues();
+        Runnable dynamoDbFailure = () -> { throw new IllegalArgumentException("dynamodb indisponivel"); };
+        Runnable noOp = () -> { };
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> RuntimeDependenciesValidator.validar(profiles, values, dynamoDbFailure, noOp));
 
         assertTrue(exception.getMessage().contains("DynamoDB"));
         assertEquals("dynamodb indisponivel", exception.getCause().getMessage());
@@ -127,11 +135,13 @@ class RuntimeDependenciesValidatorTest {
 
     @Test
     void devePropagarFalhaDaMensageriaComContexto() {
-        var exception = assertThrows(IllegalStateException.class, () -> RuntimeDependenciesValidator.validar(
-                List.of("prod"),
-                validValues(),
-                () -> { },
-                () -> { throw new IllegalArgumentException("mensageria indisponivel"); }));
+        var profiles = List.of("prod");
+        var values = validValues();
+        Runnable noOp = () -> { };
+        Runnable messagingFailure = () -> { throw new IllegalArgumentException("mensageria indisponivel"); };
+        var exception = assertThrows(
+                IllegalStateException.class,
+                () -> RuntimeDependenciesValidator.validar(profiles, values, noOp, messagingFailure));
 
         assertTrue(exception.getMessage().contains("SNS/SQS/IAM"));
         assertEquals("mensageria indisponivel", exception.getCause().getMessage());
