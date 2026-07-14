@@ -40,6 +40,7 @@ import software.amazon.awssdk.services.dynamodb.model.TransactWriteItemsRequest;
 public class DynamoDbExecutionStore {
     private static final Logger LOG = Logger.getLogger(DynamoDbExecutionStore.class);
     private static final String PRODUCER = "oficina-execution-service";
+    private static final String DATABASE = "dynamodb";
     public static final UUID SEED_PECA_ID = UUID.fromString("19fdd9ab-cf1f-4074-a96b-80ae86fba7b0");
     public static final UUID SEED_PNEU_ID = UUID.fromString("9fc69d25-1ed0-40dd-a02f-4c37e41f0bd6");
     public static final UUID SEED_TAPETE_ID = UUID.fromString("e522d846-12fb-4c42-8a68-914f4cb5a044");
@@ -95,7 +96,7 @@ public class DynamoDbExecutionStore {
         this(
                 tableNames,
                 dynamoDbClient,
-                new OperationalMetrics(new SimpleMeterRegistry(), "oficina-execution-service"));
+                new OperationalMetrics(new SimpleMeterRegistry(), PRODUCER));
     }
 
     @Inject
@@ -905,7 +906,7 @@ public class DynamoDbExecutionStore {
     }
 
     private void put(DynamoDbItem item) {
-        metrics.persistence("dynamodb", resource(item.tableName()), "put", () -> dynamoDbClient.putItem(
+        metrics.persistence(DATABASE, resource(item.tableName()), "put", () -> dynamoDbClient.putItem(
                 PutItemRequest.builder()
                         .tableName(item.tableName())
                         .item(toAttributeMap(item))
@@ -921,14 +922,14 @@ public class DynamoDbExecutionStore {
                             .item(toAttributeMap(item)))
                     .build());
         }
-        metrics.persistence("dynamodb", "transaction", "transact_write", () -> dynamoDbClient.transactWriteItems(
+        metrics.persistence(DATABASE, "transaction", "transact_write", () -> dynamoDbClient.transactWriteItems(
                 TransactWriteItemsRequest.builder()
                         .transactItems(transactionItems)
                         .build()));
     }
 
     private java.util.Optional<DynamoDbItem> getItem(String tableName, String pk, String sk) {
-        var response = metrics.persistence("dynamodb", resource(tableName), "get", () -> dynamoDbClient.getItem(
+        var response = metrics.persistence(DATABASE, resource(tableName), "get", () -> dynamoDbClient.getItem(
                 GetItemRequest.builder()
                         .tableName(tableName)
                         .key(Map.of(
@@ -942,7 +943,7 @@ public class DynamoDbExecutionStore {
     }
 
     private List<DynamoDbItem> scan(String tableName) {
-        return metrics.persistence("dynamodb", resource(tableName), "scan", () -> scanBlocking(tableName));
+        return metrics.persistence(DATABASE, resource(tableName), "scan", () -> scanBlocking(tableName));
     }
 
     private List<DynamoDbItem> scanBlocking(String tableName) {
