@@ -1,7 +1,9 @@
 package br.com.oficina.execution.interfaces.presenters.view_model;
 
+import br.com.oficina.execution.core.entities.execucao.AcaoPermitidaExecucao;
 import br.com.oficina.execution.core.entities.execucao.StatusExecucao;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record FilaExecucaoItemViewModel(
@@ -13,5 +15,6 @@ public record FilaExecucaoItemViewModel(
         String diagnostico,
         String observacoesReparo,
         OffsetDateTime criadoEm,
-        OffsetDateTime atualizadoEm) {
+        OffsetDateTime atualizadoEm,
+        List<AcaoPermitidaExecucao> acoesPermitidas) {
 }
