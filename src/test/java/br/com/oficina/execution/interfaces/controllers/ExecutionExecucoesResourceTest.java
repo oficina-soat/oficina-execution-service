@@ -43,6 +43,7 @@ class ExecutionExecucoesResourceTest {
                 .body("execucaoId", notNullValue())
                 .body("ordemServicoId", equalTo(ordemServicoId.toString()))
                 .body("status", equalTo("CRIADA"))
+                .body("acoesPermitidas", equalTo(List.of("INICIAR_DIAGNOSTICO", "CANCELAR")))
                 .body("prioridade", equalTo(100))
                 .body("criadoEm", notNullValue())
                 .body("atualizadoEm", notNullValue())
@@ -58,7 +59,8 @@ class ExecutionExecucoesResourceTest {
                 .then()
                 .statusCode(200)
                 .body("execucaoId", equalTo(execucaoId))
-                .body("status", equalTo("EM_DIAGNOSTICO"));
+                .body("status", equalTo("EM_DIAGNOSTICO"))
+                .body("acoesPermitidas", equalTo(List.of("CONCLUIR_DIAGNOSTICO", "CANCELAR")));
 
         given()
                 .header("X-Idempotency-Key", "execucao-diagnostico-conclusao-001")
@@ -74,6 +76,7 @@ class ExecutionExecucoesResourceTest {
                 .then()
                 .statusCode(200)
                 .body("status", equalTo("DIAGNOSTICO_CONCLUIDO"))
+                .body("acoesPermitidas", equalTo(List.of("INICIAR_REPARO", "CANCELAR")))
                 .body("diagnostico", equalTo("Bateria sem carga util"));
 
         given()
@@ -83,7 +86,8 @@ class ExecutionExecucoesResourceTest {
                 .post("/api/v1/execucoes/{execucaoId}/reparo/inicio", execucaoId)
                 .then()
                 .statusCode(200)
-                .body("status", equalTo("EM_REPARO"));
+                .body("status", equalTo("EM_REPARO"))
+                .body("acoesPermitidas", equalTo(List.of("CONCLUIR_REPARO", "CANCELAR")));
 
         given()
                 .header("X-Idempotency-Key", "execucao-reparo-conclusao-001")
@@ -99,6 +103,7 @@ class ExecutionExecucoesResourceTest {
                 .then()
                 .statusCode(200)
                 .body("status", equalTo("REPARO_CONCLUIDO"))
+                .body("acoesPermitidas", equalTo(List.of()))
                 .body("observacoesReparo", equalTo("Bateria substituida e teste eletrico realizado"));
 
         given()
