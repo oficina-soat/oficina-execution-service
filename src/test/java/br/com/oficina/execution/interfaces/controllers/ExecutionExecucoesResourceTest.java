@@ -174,6 +174,7 @@ class ExecutionExecucoesResourceTest {
         assertTrue(indiceUrgente < indiceNormal);
         assertEquals(1, fila.get(indiceUrgente).get("prioridade"));
         assertEquals(indiceUrgente + 1, fila.get(indiceUrgente).get("posicao"));
+        assertEquals(List.of("INICIAR_DIAGNOSTICO", "CANCELAR"), fila.get(indiceUrgente).get("acoesPermitidas"));
 
         given()
                 .header("X-Idempotency-Key", "execucao-fila-diagnostico-001")

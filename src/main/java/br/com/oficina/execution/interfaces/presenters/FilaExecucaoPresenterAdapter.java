@@ -30,6 +30,7 @@ public class FilaExecucaoPresenterAdapter {
                 execucao.diagnostico(),
                 execucao.observacoesReparo(),
                 execucao.criadoEm(),
-                execucao.atualizadoEm());
+                execucao.atualizadoEm(),
+                execucao.acoesPermitidas());
     }
 }
