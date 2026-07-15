@@ -3,6 +3,7 @@ package br.com.oficina.execution.core.entities.execucao;
 import br.com.oficina.execution.core.exceptions.BusinessConflictException;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import java.util.List;
 
 public final class Execucao {
     public static final int PRIORIDADE_PADRAO = 100;
@@ -15,6 +16,16 @@ public final class Execucao {
     private String diagnostico;
     private String observacoesReparo;
     private OffsetDateTime atualizadoEm;
+
+    public List<AcaoPermitidaExecucao> acoesPermitidas() {
+        return switch (status) {
+            case CRIADA -> List.of(AcaoPermitidaExecucao.INICIAR_DIAGNOSTICO, AcaoPermitidaExecucao.CANCELAR);
+            case EM_DIAGNOSTICO -> List.of(AcaoPermitidaExecucao.CONCLUIR_DIAGNOSTICO, AcaoPermitidaExecucao.CANCELAR);
+            case DIAGNOSTICO_CONCLUIDO -> List.of(AcaoPermitidaExecucao.INICIAR_REPARO, AcaoPermitidaExecucao.CANCELAR);
+            case EM_REPARO -> List.of(AcaoPermitidaExecucao.CONCLUIR_REPARO, AcaoPermitidaExecucao.CANCELAR);
+            case REPARO_CONCLUIDO, CANCELADA -> List.of();
+        };
+    }
 
     public Execucao(UUID execucaoId, UUID ordemServicoId, OffsetDateTime criadoEm) {
         this(execucaoId, ordemServicoId, PRIORIDADE_PADRAO, criadoEm);
