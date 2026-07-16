@@ -50,7 +50,22 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .body("pecaId", equalTo(DynamoDbExecutionStore.SEED_PECA_ID.toString()))
                 .body("quantidadeDisponivel", equalTo(50))
                 .body("quantidadeReservada", equalTo(0))
-                .body("atualizadoEm", notNullValue());
+                .body("atualizadoEm", notNullValue())
+                .body("acoesPermitidas[0]", equalTo("REGISTRAR_ENTRADA"));
+
+        given()
+                .queryParam("nome", "vol")
+                .queryParam("codigo", "001")
+                .queryParam("page", 0)
+                .queryParam("size", 1)
+                .when()
+                .get("/api/v1/pecas")
+                .then()
+                .statusCode(200)
+                .body("items.size()", equalTo(1))
+                .body("items[0].pecaId", equalTo(DynamoDbExecutionStore.SEED_PECA_ID.toString()))
+                .body("size", equalTo(1))
+                .body("totalElements", equalTo(1));
     }
 
     @Test
@@ -102,7 +117,8 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .get("/api/v1/servicos")
                 .then()
                 .statusCode(200)
-                .body("size()", greaterThanOrEqualTo(2));
+                .body("items.size()", greaterThanOrEqualTo(2))
+                .body("page", equalTo(0));
     }
 
     @Test
@@ -291,11 +307,11 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .get("/api/v1/estoques/movimentos")
                 .then()
                 .statusCode(200)
-                .body("size()", equalTo(4))
-                .body("[0].tipo", equalTo("ENTRADA"))
-                .body("[1].tipo", equalTo("RESERVA"))
-                .body("[2].tipo", equalTo("CONSUMO"))
-                .body("[3].tipo", equalTo("ESTORNO"));
+                .body("items.size()", equalTo(4))
+                .body("items[0].tipo", equalTo("ESTORNO"))
+                .body("items[1].tipo", equalTo("CONSUMO"))
+                .body("items[2].tipo", equalTo("RESERVA"))
+                .body("items[3].tipo", equalTo("ENTRADA"));
 
         given()
                 .queryParam("ordemServicoId", DynamoDbExecutionStore.SEED_ORDEM_SERVICO_ID)
@@ -303,7 +319,7 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .get("/api/v1/estoques/movimentos")
                 .then()
                 .statusCode(200)
-                .body("size()", greaterThanOrEqualTo(3));
+                .body("items.size()", greaterThanOrEqualTo(3));
     }
 
     @Test

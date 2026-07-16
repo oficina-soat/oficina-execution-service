@@ -2,6 +2,7 @@ package br.com.oficina.execution.interfaces.presenters;
 
 import br.com.oficina.execution.core.entities.estoque.Estoque;
 import br.com.oficina.execution.interfaces.presenters.view_model.SaldoEstoqueViewModel;
+import java.util.List;
 
 public class SaldoEstoquePresenterAdapter {
     private SaldoEstoqueViewModel viewModel;
@@ -11,7 +12,8 @@ public class SaldoEstoquePresenterAdapter {
                 estoque.pecaId(),
                 estoque.quantidadeDisponivel(),
                 estoque.quantidadeReservada(),
-                estoque.atualizadoEm());
+                estoque.atualizadoEm(),
+                List.of("REGISTRAR_ENTRADA"));
     }
 
     public SaldoEstoqueViewModel viewModel() {

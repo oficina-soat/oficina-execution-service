@@ -5,6 +5,7 @@ import br.com.oficina.execution.interfaces.controllers.EstoqueController;
 import br.com.oficina.execution.interfaces.presenters.MovimentoEstoquePresenterAdapter;
 import br.com.oficina.execution.interfaces.presenters.SaldoEstoquePresenterAdapter;
 import br.com.oficina.execution.interfaces.presenters.view_model.MovimentoEstoqueViewModel;
+import br.com.oficina.execution.interfaces.presenters.view_model.PaginaViewModel;
 import br.com.oficina.execution.interfaces.presenters.view_model.SaldoEstoqueViewModel;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
@@ -21,7 +22,6 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.eclipse.microprofile.openapi.annotations.enums.ParameterIn;
@@ -59,13 +59,20 @@ public class EstoqueResource {
 
     @GET
     @Path("movimentos")
-    public Uni<List<MovimentoEstoqueViewModel>> consultarMovimentos(
+    public Uni<PaginaViewModel<MovimentoEstoqueViewModel>> consultarMovimentos(
             @QueryParam("pecaId") UUID pecaId,
-            @QueryParam("ordemServicoId") UUID ordemServicoId) {
+            @QueryParam("ordemServicoId") UUID ordemServicoId,
+            @QueryParam("tipo") TipoMovimentoEstoque tipo,
+            @QueryParam("page") Integer page,
+            @QueryParam("size") Integer size) {
         return uni(estoqueController.consultarMovimentos(pecaId, ordemServicoId))
                 .onItem().transform(movimentos -> {
                     movimentoPresenter.present(movimentos);
-                    return movimentoPresenter.viewModels();
+                    var filtered = movimentoPresenter.viewModels().stream()
+                            .filter(item -> tipo == null || item.tipo() == tipo)
+                            .sorted((left, right) -> right.criadoEm().compareTo(left.criadoEm()))
+                            .toList();
+                    return PaginaViewModel.from(filtered, page == null ? 0 : page, size == null ? 20 : size);
                 });
     }
 
