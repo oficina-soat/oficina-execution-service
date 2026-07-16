@@ -250,4 +250,4 @@ src/main/java/br/com/oficina/execution/
 
 ## Próximo Trabalho
 
-O backlog local está em [TODO.md](TODO.md). Os próximos incrementos esperados devem manter a documentação local atualizada conforme novos manifests, variáveis e evidências forem materializados, preservando alinhamento com o [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).
+O [TODO.md](TODO.md) é o checklist histórico das entregas concluídas. Novos incrementos são controlados no [ROADMAP da plataforma](../oficina-platform/ROADMAP.md).

@@ -1,6 +1,8 @@
-# TODO do oficina-execution-service
+# Histórico de implementação do oficina-execution-service
 
-## Próximas Tarefas
+Este checklist registra o escopo já entregue. Novas tarefas são controladas no roadmap do `oficina-platform`, evitando dois backlogs concorrentes.
+
+## Entregas concluídas
 
 - [x] Copiar e adaptar domínio de catálogo técnico de peças do `oficina-app`.
 - [x] Copiar e adaptar domínio de catálogo técnico de serviços.

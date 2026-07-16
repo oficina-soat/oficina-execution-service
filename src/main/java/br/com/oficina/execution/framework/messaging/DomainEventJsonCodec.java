@@ -22,6 +22,7 @@ class DomainEventJsonCodec {
                     event.createdAt(),
                     event.producer(),
                     event.aggregateId(),
+                    event.correlationId(),
                     event.payload()));
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Evento de Outbox nao pode ser serializado.", exception);
