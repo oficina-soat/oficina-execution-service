@@ -56,6 +56,7 @@ class ExecutionCatalogoEstoqueResourceTest {
         given()
                 .queryParam("nome", "vol")
                 .queryParam("codigo", "001")
+                .queryParam("ativo", true)
                 .queryParam("page", 0)
                 .queryParam("size", 1)
                 .when()
@@ -66,6 +67,15 @@ class ExecutionCatalogoEstoqueResourceTest {
                 .body("items[0].pecaId", equalTo(DynamoDbExecutionStore.SEED_PECA_ID.toString()))
                 .body("size", equalTo(1))
                 .body("totalElements", equalTo(1));
+
+        given()
+                .queryParam("ativo", false)
+                .when()
+                .get("/api/v1/servicos")
+                .then()
+                .statusCode(200)
+                .body("items.size()", equalTo(0))
+                .body("totalElements", equalTo(0));
     }
 
     @Test
