@@ -65,6 +65,7 @@ public class CatalogoResource {
     @Path("servicos")
     public Uni<PaginaViewModel<ServicoViewModel>> consultarServicos(
             @QueryParam("nome") String nome,
+            @QueryParam("ativo") Boolean ativo,
             @QueryParam("page") Integer page,
             @QueryParam("size") Integer size) {
         return uni(catalogoController.consultarServicos())
@@ -72,6 +73,7 @@ public class CatalogoResource {
                     servicoPresenter.present(servicos);
                     var filtered = servicoPresenter.viewModels().stream()
                             .filter(item -> containsIgnoreCase(item.nome(), nome))
+                            .filter(item -> ativo == null || item.ativo() == ativo)
                             .sorted((left, right) -> left.nome().compareToIgnoreCase(right.nome()))
                             .toList();
                     return PaginaViewModel.from(filtered, defaultPage(page), defaultSize(size));
@@ -119,6 +121,7 @@ public class CatalogoResource {
     public Uni<PaginaViewModel<PecaViewModel>> consultarPecas(
             @QueryParam("nome") String nome,
             @QueryParam("codigo") String codigo,
+            @QueryParam("ativo") Boolean ativo,
             @QueryParam("page") Integer page,
             @QueryParam("size") Integer size) {
         return uni(catalogoController.consultarPecas())
@@ -127,6 +130,7 @@ public class CatalogoResource {
                     var filtered = pecaPresenter.viewModels().stream()
                             .filter(item -> containsIgnoreCase(item.nome(), nome))
                             .filter(item -> containsIgnoreCase(item.codigo(), codigo))
+                            .filter(item -> ativo == null || item.ativo() == ativo)
                             .sorted((left, right) -> left.nome().compareToIgnoreCase(right.nome()))
                             .toList();
                     return PaginaViewModel.from(filtered, defaultPage(page), defaultSize(size));
