@@ -29,6 +29,47 @@ O `oficina-execution-service` participa da Saga como autoridade operacional. Ele
 - Amazon DynamoDB
 - JWT, OpenAPI, Health, métricas Prometheus, logs JSON e OpenTelemetry
 
+## Arquitetura
+
+```mermaid
+flowchart LR
+  HTTP["APIs REST<br/>catálogo, estoque e execução"] --> Web["framework/web<br/>Resources e composição CDI"]
+  Web --> Controllers["interfaces/controllers"]
+  Controllers --> UseCases["core/usecases<br/>catálogo, estoque,<br/>diagnóstico e reparo"]
+  UseCases --> Domain["core/entities<br/>Peça, Serviço, Estoque e Execução"]
+  UseCases --> Ports["core/interfaces<br/>portas de saída"]
+  Controllers --> Presenters["interfaces/presenters"]
+  Presenters --> HTTP
+
+  Ports --> DynamoAdapter["framework/dynamodb"]
+  DynamoAdapter --> Catalog[("DynamoDB catálogo")]
+  DynamoAdapter --> Stock[("DynamoDB estoque")]
+  DynamoAdapter --> Executions[("DynamoDB execuções")]
+  DynamoAdapter --> OutboxTable[("DynamoDB Outbox")]
+  DynamoAdapter --> Idempotency[("DynamoDB idempotência")]
+
+  Ports --> Messaging["framework/messaging<br/>publisher e consumers"]
+  OutboxTable --> Messaging
+  Messaging --> SNS["SNS<br/>eventos de estoque e execução"]
+  SagaSNS["SNS<br/>eventos e comandos da Saga"] --> SQS["SQS do oficina-execution-service"]
+  SQS --> Messaging
+  Messaging --> UseCases
+
+  OS["oficina-os-service<br/>orquestrador da Saga"] --> SagaSNS
+  SNS --> OS
+
+  classDef core fill:#e5f5ec,stroke:#176b45,color:#14202b;
+  classDef adapter fill:#e7f1fa,stroke:#1f5f99,color:#14202b;
+  classDef data fill:#fff3d6,stroke:#7a4b00,color:#14202b;
+  classDef event fill:#f3e8ff,stroke:#6b21a8,color:#14202b;
+  class Domain,UseCases,Ports core;
+  class Web,Controllers,Presenters,DynamoAdapter,Messaging adapter;
+  class Catalog,Stock,Executions,OutboxTable,Idempotency data;
+  class SNS,SagaSNS,SQS,OS event;
+```
+
+O serviço possui ownership de catálogo técnico, estoque e execução. A integração com a Saga é assíncrona e idempotente; o estado global da Ordem de Serviço permanece sob responsabilidade do `oficina-os-service`.
+
 ## Persistência
 
 A persistência runtime usa `DynamoDbClient` síncrono com as tabelas definidas no [Padrão DynamoDB do oficina-execution-service](../oficina-platform/docs/infrastructure/dynamodb-execution-service.md). O store grava e lê catálogo, estoque, execuções, Outbox e idempotência no DynamoDB, mantendo os itens canônicos `PK`, `SK`, `entityType` e os atributos necessários aos GSIs documentados.
