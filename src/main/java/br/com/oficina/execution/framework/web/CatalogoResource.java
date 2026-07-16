@@ -4,6 +4,7 @@ import br.com.oficina.execution.interfaces.controllers.CatalogoController;
 import br.com.oficina.execution.interfaces.presenters.PecaPresenterAdapter;
 import br.com.oficina.execution.interfaces.presenters.ServicoPresenterAdapter;
 import br.com.oficina.execution.interfaces.presenters.view_model.PecaViewModel;
+import br.com.oficina.execution.interfaces.presenters.view_model.PaginaViewModel;
 import br.com.oficina.execution.interfaces.presenters.view_model.ServicoViewModel;
 import io.smallrye.common.annotation.Blocking;
 import io.smallrye.mutiny.Uni;
@@ -16,10 +17,11 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
-import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.eclipse.microprofile.openapi.annotations.enums.ParameterIn;
@@ -61,11 +63,18 @@ public class CatalogoResource {
 
     @GET
     @Path("servicos")
-    public Uni<List<ServicoViewModel>> consultarServicos() {
+    public Uni<PaginaViewModel<ServicoViewModel>> consultarServicos(
+            @QueryParam("nome") String nome,
+            @QueryParam("page") Integer page,
+            @QueryParam("size") Integer size) {
         return uni(catalogoController.consultarServicos())
                 .onItem().transform(servicos -> {
                     servicoPresenter.present(servicos);
-                    return servicoPresenter.viewModels();
+                    var filtered = servicoPresenter.viewModels().stream()
+                            .filter(item -> containsIgnoreCase(item.nome(), nome))
+                            .sorted((left, right) -> left.nome().compareToIgnoreCase(right.nome()))
+                            .toList();
+                    return PaginaViewModel.from(filtered, defaultPage(page), defaultSize(size));
                 });
     }
 
@@ -107,11 +116,20 @@ public class CatalogoResource {
 
     @GET
     @Path("pecas")
-    public Uni<List<PecaViewModel>> consultarPecas() {
+    public Uni<PaginaViewModel<PecaViewModel>> consultarPecas(
+            @QueryParam("nome") String nome,
+            @QueryParam("codigo") String codigo,
+            @QueryParam("page") Integer page,
+            @QueryParam("size") Integer size) {
         return uni(catalogoController.consultarPecas())
                 .onItem().transform(pecas -> {
                     pecaPresenter.present(pecas);
-                    return pecaPresenter.viewModels();
+                    var filtered = pecaPresenter.viewModels().stream()
+                            .filter(item -> containsIgnoreCase(item.nome(), nome))
+                            .filter(item -> containsIgnoreCase(item.codigo(), codigo))
+                            .sorted((left, right) -> left.nome().compareToIgnoreCase(right.nome()))
+                            .toList();
+                    return PaginaViewModel.from(filtered, defaultPage(page), defaultSize(size));
                 });
     }
 
@@ -139,5 +157,18 @@ public class CatalogoResource {
 
     private static <T> Uni<T> uni(CompletableFuture<T> future) {
         return Uni.createFrom().completionStage(future);
+    }
+
+    private static boolean containsIgnoreCase(String value, String filter) {
+        return filter == null || filter.isBlank()
+                || value.toLowerCase(Locale.ROOT).contains(filter.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private static int defaultPage(Integer page) {
+        return page == null ? 0 : page;
+    }
+
+    private static int defaultSize(Integer size) {
+        return size == null ? 20 : size;
     }
 }
