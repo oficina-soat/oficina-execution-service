@@ -105,6 +105,8 @@ public class ExecutionEventConsumer {
     }
 
     private String correlationId(DomainEventEnvelope envelope) {
-        return envelope.eventId().toString();
+        return envelope.correlationId() == null || envelope.correlationId().isBlank()
+                ? envelope.eventId().toString()
+                : envelope.correlationId();
     }
 }
