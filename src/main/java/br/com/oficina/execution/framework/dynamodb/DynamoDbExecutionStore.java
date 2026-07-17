@@ -322,6 +322,15 @@ public class DynamoDbExecutionStore {
         return execucao;
     }
 
+    public Execucao iniciarReparoAposAprovacao(UUID ordemServicoId, String correlationId) {
+        var execucao = criarExecucaoSeAusente(ordemServicoId);
+        return switch (execucao.status()) {
+            case DIAGNOSTICO_CONCLUIDO -> iniciarReparo(execucao.execucaoId(), correlationId);
+            case EM_REPARO, REPARO_CONCLUIDO -> execucao;
+            case CRIADA, EM_DIAGNOSTICO, CANCELADA -> execucao;
+        };
+    }
+
     public Execucao concluirReparo(UUID execucaoId, String observacoes, String correlationId) {
         var execucao = buscarExecucao(execucaoId);
         var statusAnterior = execucao.status();
