@@ -20,6 +20,7 @@ final class DomainMessagingRoutes {
             Map.entry("pecaIncluidaNaOrdemDeServico", "oficina.os.peca-incluida-na-ordem-de-servico"),
             Map.entry("servicoIncluidoNaOrdemDeServico", "oficina.os.servico-incluido-na-ordem-de-servico"),
             Map.entry("orcamentoAprovado", "oficina.billing.orcamento-aprovado"),
+            Map.entry("orcamentoRecusado", "oficina.billing.orcamento-recusado"),
             Map.entry("ordemDeServicoFinalizada", "oficina.os.ordem-de-servico-finalizada"),
             Map.entry("sagaCompensada", "oficina.saga.saga-compensada"),
             Map.entry("sagaFinalizadaComSucesso", "oficina.saga.saga-finalizada-com-sucesso")));

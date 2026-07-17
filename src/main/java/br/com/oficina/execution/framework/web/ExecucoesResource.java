@@ -130,20 +130,6 @@ public class ExecucoesResource {
     }
 
     @POST
-    @Path("execucoes/{execucaoId}/reparo/inicio")
-    @Consumes(MediaType.WILDCARD)
-    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
-    public Uni<ExecucaoViewModel> iniciarReparo(
-            @PathParam("execucaoId") UUID execucaoId,
-            @HeaderParam("X-Correlation-Id") String correlationId) {
-        return uni(execucoesController.iniciarReparo(execucaoId, correlationId))
-                .onItem().transform(execucao -> {
-                    execucaoPresenter.present(execucao);
-                    return execucaoPresenter.viewModel();
-                });
-    }
-
-    @POST
     @Path("execucoes/{execucaoId}/reparo/conclusao")
     @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
     public Uni<ExecucaoViewModel> concluirReparo(
@@ -151,19 +137,6 @@ public class ExecucoesResource {
             ExecucoesController.ConclusaoReparoRequest request,
             @HeaderParam("X-Correlation-Id") String correlationId) {
         return uni(execucoesController.concluirReparo(execucaoId, request, correlationId))
-                .onItem().transform(execucao -> {
-                    execucaoPresenter.present(execucao);
-                    return execucaoPresenter.viewModel();
-                });
-    }
-
-    @POST
-    @Path("execucoes/{execucaoId}/cancelamento")
-    @Parameter(name = "X-Idempotency-Key", in = ParameterIn.HEADER, required = true, description = "Chave de idempotência da operação mutável.")
-    public Uni<ExecucaoViewModel> cancelarExecucao(
-            @PathParam("execucaoId") UUID execucaoId,
-            ExecucoesController.CancelamentoRequest request) {
-        return uni(execucoesController.cancelarExecucao(execucaoId, request))
                 .onItem().transform(execucao -> {
                     execucaoPresenter.present(execucao);
                     return execucaoPresenter.viewModel();

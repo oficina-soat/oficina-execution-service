@@ -20,6 +20,7 @@ public class ExecutionEventConsumer {
             "pecaIncluidaNaOrdemDeServico",
             "servicoIncluidoNaOrdemDeServico",
             "orcamentoAprovado",
+            "orcamentoRecusado",
             "ordemDeServicoFinalizada",
             "sagaCompensada",
             "sagaFinalizadaComSucesso");
@@ -36,15 +37,21 @@ public class ExecutionEventConsumer {
         }
         var key = envelope.eventId().toString();
         var correlationId = correlationId(envelope);
-        if (store.idempotenciaExiste(SCOPE, key)) {
+        var existing = store.buscarIdempotencia(SCOPE, key);
+        if (existing.isPresent() && existing.get().processingStatus() == ProcessingStatus.COMPLETED) {
             logEvent("domain event ignored", envelope, "DUPLICATE", correlationId);
             return false;
         }
-        StructuredLog.withFields(eventFields(envelope, "PROCESSING", correlationId), () -> {
-            store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.PROCESSING);
-            aplicarEvento(envelope);
-            store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.COMPLETED);
-        });
+        try {
+            StructuredLog.withFields(eventFields(envelope, "PROCESSING", correlationId), () -> {
+                store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.PROCESSING);
+                aplicarEvento(envelope);
+                store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.COMPLETED);
+            });
+        } catch (RuntimeException exception) {
+            store.registrarIdempotencia(SCOPE, key, envelope.eventType(), null, null, ProcessingStatus.FAILED_RETRYABLE);
+            throw exception;
+        }
         logEvent("domain event consumed", envelope, "CONSUMED", correlationId);
         return true;
     }
@@ -54,8 +61,9 @@ public class ExecutionEventConsumer {
             case "ordemDeServicoCriada" -> store.criarExecucaoSeAusente(ordemServicoId(envelope));
             case "orcamentoAprovado" -> store.iniciarReparoAposAprovacao(
                     ordemServicoId(envelope), correlationId(envelope));
-            case "pecaIncluidaNaOrdemDeServico" -> store.buscarPeca(uuidPayload(envelope, "pecaId"));
-            case "servicoIncluidoNaOrdemDeServico" -> store.buscarServico(uuidPayload(envelope, "servicoId"));
+            case "orcamentoRecusado" -> store.retomarDiagnosticoAposRecusa(ordemServicoId(envelope));
+            case "pecaIncluidaNaOrdemDeServico" -> store.buscarPeca(uuidPayload(envelope, "peca", "pecaId"));
+            case "servicoIncluidoNaOrdemDeServico" -> store.buscarServico(uuidPayload(envelope, "servico", "servicoId"));
             case "sagaCompensada" -> cancelarSeExistir(envelope);
             case "ordemDeServicoFinalizada", "sagaFinalizadaComSucesso" -> {
                 // Eventos de fechamento sao registrados para idempotencia e auditoria local.
@@ -78,8 +86,9 @@ public class ExecutionEventConsumer {
         return payloadValue == null ? UUID.fromString(envelope.aggregateId()) : toUuid(payloadValue);
     }
 
-    private UUID uuidPayload(DomainEventEnvelope envelope, String field) {
-        var value = envelope.payload().get(field);
+    private UUID uuidPayload(DomainEventEnvelope envelope, String objectField, String field) {
+        var nested = envelope.payload().get(objectField);
+        var value = nested instanceof Map<?, ?> values ? values.get(field) : null;
         if (value == null) {
             throw new IllegalArgumentException(field + " e obrigatorio no payload do evento " + envelope.eventType() + ".");
         }

@@ -43,7 +43,7 @@ class ExecutionExecucoesResourceTest {
                 .body("execucaoId", notNullValue())
                 .body("ordemServicoId", equalTo(ordemServicoId.toString()))
                 .body("status", equalTo("CRIADA"))
-                .body("acoesPermitidas", equalTo(List.of("INICIAR_DIAGNOSTICO", "CANCELAR")))
+                .body("acoesPermitidas", equalTo(List.of("INICIAR_DIAGNOSTICO")))
                 .body("prioridade", equalTo(100))
                 .body("criadoEm", notNullValue())
                 .body("atualizadoEm", notNullValue())
@@ -60,7 +60,7 @@ class ExecutionExecucoesResourceTest {
                 .statusCode(200)
                 .body("execucaoId", equalTo(execucaoId))
                 .body("status", equalTo("EM_DIAGNOSTICO"))
-                .body("acoesPermitidas", equalTo(List.of("CONCLUIR_DIAGNOSTICO", "CANCELAR")));
+                .body("acoesPermitidas", equalTo(List.of("CONCLUIR_DIAGNOSTICO")));
 
         given()
                 .header("X-Idempotency-Key", "execucao-diagnostico-conclusao-001")
@@ -76,18 +76,10 @@ class ExecutionExecucoesResourceTest {
                 .then()
                 .statusCode(200)
                 .body("status", equalTo("DIAGNOSTICO_CONCLUIDO"))
-                .body("acoesPermitidas", equalTo(List.of("INICIAR_REPARO", "CANCELAR")))
+                .body("acoesPermitidas", equalTo(List.of()))
                 .body("diagnostico", equalTo("Bateria sem carga util"));
 
-        given()
-                .header("X-Idempotency-Key", "execucao-reparo-inicio-001")
-                .header("X-Correlation-Id", "corr-execucao-001")
-                .when()
-                .post("/api/v1/execucoes/{execucaoId}/reparo/inicio", execucaoId)
-                .then()
-                .statusCode(200)
-                .body("status", equalTo("EM_REPARO"))
-                .body("acoesPermitidas", equalTo(List.of("CONCLUIR_REPARO", "CANCELAR")));
+        store.iniciarReparo(UUID.fromString(execucaoId), "corr-aprovacao-001");
 
         given()
                 .header("X-Idempotency-Key", "execucao-reparo-conclusao-001")
@@ -125,7 +117,7 @@ class ExecutionExecucoesResourceTest {
     }
 
     @Test
-    void deveRejeitarTransicaoInvalidaComErroContratado() {
+    void naoDeveExporInicioDoReparoComoAcaoPublica() {
         var ordemServicoId = UUID.randomUUID();
         var execucaoId = given()
                 .header("X-Idempotency-Key", "execucao-invalid-create-001")
@@ -148,14 +140,7 @@ class ExecutionExecucoesResourceTest {
                 .when()
                 .post("/api/v1/execucoes/{execucaoId}/reparo/inicio", execucaoId)
                 .then()
-                .statusCode(409)
-                .body("status", equalTo(409))
-                .body("error", equalTo("Conflict"))
-                .body("code", equalTo("HTTP_409"))
-                .body("message", containsString("Reparo so pode iniciar"))
-                .body("path", equalTo("/api/v1/execucoes/" + execucaoId + "/reparo/inicio"))
-                .body("correlationId", notNullValue())
-                .body("service", equalTo("oficina-execution-service"));
+                .statusCode(404);
     }
 
     @Test
@@ -174,7 +159,7 @@ class ExecutionExecucoesResourceTest {
         assertTrue(indiceUrgente < indiceNormal);
         assertEquals(1, fila.get(indiceUrgente).get("prioridade"));
         assertEquals(indiceUrgente + 1, fila.get(indiceUrgente).get("posicao"));
-        assertEquals(List.of("INICIAR_DIAGNOSTICO", "CANCELAR"), fila.get(indiceUrgente).get("acoesPermitidas"));
+        assertEquals(List.of("INICIAR_DIAGNOSTICO"), fila.get(indiceUrgente).get("acoesPermitidas"));
 
         given()
                 .header("X-Idempotency-Key", "execucao-fila-diagnostico-001")

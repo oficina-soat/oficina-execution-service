@@ -19,10 +19,10 @@ public final class Execucao {
 
     public List<AcaoPermitidaExecucao> acoesPermitidas() {
         return switch (status) {
-            case CRIADA -> List.of(AcaoPermitidaExecucao.INICIAR_DIAGNOSTICO, AcaoPermitidaExecucao.CANCELAR);
-            case EM_DIAGNOSTICO -> List.of(AcaoPermitidaExecucao.CONCLUIR_DIAGNOSTICO, AcaoPermitidaExecucao.CANCELAR);
-            case DIAGNOSTICO_CONCLUIDO -> List.of(AcaoPermitidaExecucao.INICIAR_REPARO, AcaoPermitidaExecucao.CANCELAR);
-            case EM_REPARO -> List.of(AcaoPermitidaExecucao.CONCLUIR_REPARO, AcaoPermitidaExecucao.CANCELAR);
+            case CRIADA -> List.of(AcaoPermitidaExecucao.INICIAR_DIAGNOSTICO);
+            case EM_DIAGNOSTICO -> List.of(AcaoPermitidaExecucao.CONCLUIR_DIAGNOSTICO);
+            case DIAGNOSTICO_CONCLUIDO -> List.of();
+            case EM_REPARO -> List.of(AcaoPermitidaExecucao.CONCLUIR_REPARO);
             case REPARO_CONCLUIDO, CANCELADA -> List.of();
         };
     }
@@ -91,6 +91,12 @@ public final class Execucao {
         exigirStatus(StatusExecucao.EM_DIAGNOSTICO, "Diagnostico so pode ser concluido em execucao EM_DIAGNOSTICO.");
         this.diagnostico = textoOpcional(diagnostico);
         transicionar(StatusExecucao.DIAGNOSTICO_CONCLUIDO, agora);
+    }
+
+    public void retomarDiagnostico(OffsetDateTime agora) {
+        exigirStatus(StatusExecucao.DIAGNOSTICO_CONCLUIDO,
+                "Diagnostico so pode ser retomado em execucao DIAGNOSTICO_CONCLUIDO.");
+        transicionar(StatusExecucao.EM_DIAGNOSTICO, agora);
     }
 
     public void iniciarReparo(OffsetDateTime agora) {
