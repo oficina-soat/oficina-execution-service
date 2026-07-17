@@ -57,15 +57,18 @@ flowchart LR
 
   OS["oficina-os-service<br/>orquestrador da Saga"] --> SagaSNS
   SNS --> OS
+  Web -. "métricas, traces e logs" .-> Telemetry["Coletor OTLP"]
 
   classDef core fill:#e5f5ec,stroke:#176b45,color:#14202b;
   classDef adapter fill:#e7f1fa,stroke:#1f5f99,color:#14202b;
   classDef data fill:#fff3d6,stroke:#7a4b00,color:#14202b;
   classDef event fill:#f3e8ff,stroke:#6b21a8,color:#14202b;
+  classDef observe fill:#fdeaea,stroke:#a22929,color:#14202b;
   class Domain,UseCases,Ports core;
-  class Web,Controllers,Presenters,DynamoAdapter,Messaging adapter;
+  class HTTP,Web,Controllers,Presenters,DynamoAdapter,Messaging adapter;
   class Catalog,Stock,Executions,OutboxTable,Idempotency data;
   class SNS,SagaSNS,SQS,OS event;
+  class Telemetry observe;
 ```
 
 O serviço possui ownership de catálogo técnico, estoque e execução. A integração com a Saga é assíncrona e idempotente; o estado global da Ordem de Serviço permanece sob responsabilidade do `oficina-os-service`.
