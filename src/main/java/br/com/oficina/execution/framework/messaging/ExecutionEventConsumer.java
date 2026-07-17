@@ -51,7 +51,9 @@ public class ExecutionEventConsumer {
 
     private void aplicarEvento(DomainEventEnvelope envelope) {
         switch (envelope.eventType()) {
-            case "ordemDeServicoCriada", "orcamentoAprovado" -> store.criarExecucaoSeAusente(ordemServicoId(envelope));
+            case "ordemDeServicoCriada" -> store.criarExecucaoSeAusente(ordemServicoId(envelope));
+            case "orcamentoAprovado" -> store.iniciarReparoAposAprovacao(
+                    ordemServicoId(envelope), correlationId(envelope));
             case "pecaIncluidaNaOrdemDeServico" -> store.buscarPeca(uuidPayload(envelope, "pecaId"));
             case "servicoIncluidoNaOrdemDeServico" -> store.buscarServico(uuidPayload(envelope, "servicoId"));
             case "sagaCompensada" -> cancelarSeExistir(envelope);

@@ -98,6 +98,8 @@ A validação de infraestrutura é não destrutiva e usa STS, `DescribeTable`, `
 
 O serviço publica eventos de diagnóstico, execução e estoque exclusivamente pela Outbox DynamoDB. Quando `OFICINA_MESSAGING_ENABLED=true`, o worker assíncrono publica pendentes no SNS canônico, aplica retry/backoff, marca `PUBLISHED` após sucesso e marca `FAILED` ao esgotar tentativas. O consumo usa filas SQS por tópico/consumidor e só remove a mensagem depois que a idempotência e o processamento local são persistidos no DynamoDB.
 
+Ao consumir `orcamentoAprovado`, o serviço inicia o reparo apenas se o diagnóstico estiver concluído e registra `execucaoIniciada` na Outbox na mesma transação da mudança operacional. A idempotência do evento impede uma segunda publicação; aprovações entregues antes de existir o contexto local podem criá-lo, mas não antecipam diagnóstico nem reparo.
+
 Configuração principal:
 
 - `OFICINA_MESSAGING_ENABLED`

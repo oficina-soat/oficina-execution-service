@@ -1,10 +1,12 @@
 package br.com.oficina.execution.framework.messaging;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import br.com.oficina.execution.core.entities.execucao.StatusExecucao;
 import br.com.oficina.execution.framework.dynamodb.DynamoDbExecutionStore;
 import br.com.oficina.execution.framework.dynamodb.DynamoDbLocalTestSupport;
 import br.com.oficina.execution.framework.dynamodb.DynamoDbTableNames;
@@ -60,6 +62,42 @@ class ExecutionEventConsumerTest {
         assertFalse(consumer.consumir(envelope));
         var execucao = store.buscarExecucaoDaOrdemServico(ordemServicoId);
         assertNotNull(execucao.execucaoId());
+    }
+
+    @Test
+    void deveIniciarReparoEPublicarEventoAposAprovacaoDoOrcamento() {
+        var ordemServicoId = UUID.randomUUID();
+        var execucao = store.criarExecucaoSeAusente(ordemServicoId);
+        store.iniciarDiagnostico(execucao.execucaoId(), "correlation-diagnostico");
+        store.concluirDiagnostico(execucao.execucaoId(), "Diagnostico concluido", "correlation-diagnostico");
+        var aprovacao = envelope(
+                UUID.randomUUID(),
+                "orcamentoAprovado",
+                ordemServicoId,
+                Map.of("ordemServicoId", ordemServicoId, "orcamentoId", UUID.randomUUID()));
+
+        assertTrue(consumer.consumir(aprovacao));
+        assertFalse(consumer.consumir(aprovacao));
+        assertEquals(StatusExecucao.EM_REPARO, store.buscarExecucaoDaOrdemServico(ordemServicoId).status());
+        assertEquals(1, store.outboxEvents().stream()
+                .filter(event -> event.eventType().equals("execucaoIniciada"))
+                .count());
+    }
+
+    @Test
+    void deveAceitarAprovacaoAntesDaCriacaoSemDuplicarExecucao() {
+        var ordemServicoId = UUID.randomUUID();
+        var aprovacao = envelope(
+                UUID.randomUUID(),
+                "orcamentoAprovado",
+                ordemServicoId,
+                Map.of("ordemServicoId", ordemServicoId, "orcamentoId", UUID.randomUUID()));
+
+        assertTrue(consumer.consumir(aprovacao));
+        assertEquals(StatusExecucao.CRIADA, store.buscarExecucaoDaOrdemServico(ordemServicoId).status());
+        assertEquals(0, store.outboxEvents().stream()
+                .filter(event -> event.eventType().equals("execucaoIniciada"))
+                .count());
     }
 
     @Test
