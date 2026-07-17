@@ -201,6 +201,7 @@ O deploy automatizado com `ENABLE_K8S_DEPLOY` diferente de `false` materializa o
 ## Endpoint técnico
 
 - `GET /api/v1/status`: expõe identidade do serviço, ambiente e status técnico básico.
+- `GET /api/v1/dashboard/execucao`: agrega carga por estado e a fila canônica para `administrativo` e `mecanico`; alertas de estoque permanecem vazios enquanto não houver política canônica de reposição.
 
 Health checks do Quarkus ficam em `/q/health`, `/q/health/live` e `/q/health/ready`.
 
