@@ -11,6 +11,7 @@ import br.com.oficina.execution.core.usecases.catalogo.CriarPecaUseCase;
 import br.com.oficina.execution.core.usecases.catalogo.CriarServicoUseCase;
 import br.com.oficina.execution.core.usecases.catalogo.ListarPecasUseCase;
 import br.com.oficina.execution.core.usecases.catalogo.ListarServicosUseCase;
+import br.com.oficina.execution.core.usecases.dashboard.ConsultarDashboardExecucaoUseCase;
 import br.com.oficina.execution.core.usecases.estoque.ConsultarSaldoEstoqueUseCase;
 import br.com.oficina.execution.core.usecases.estoque.ListarMovimentosEstoqueUseCase;
 import br.com.oficina.execution.core.usecases.estoque.RegistrarMovimentoEstoqueUseCase;
@@ -42,6 +43,11 @@ import jakarta.enterprise.inject.Produces;
 
 @ApplicationScoped
 public class ExecutionConfiguration {
+    @Produces
+    ConsultarDashboardExecucaoUseCase consultarDashboardExecucaoUseCase(ExecucaoGateway execucaoGateway) {
+        return new ConsultarDashboardExecucaoUseCase(execucaoGateway);
+    }
+
     @Produces
     CatalogoController catalogoController(CatalogoGateway catalogoGateway) {
         return new CatalogoController(
