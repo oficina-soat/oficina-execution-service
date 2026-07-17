@@ -1176,7 +1176,9 @@ public class DynamoDbExecutionStore {
     }
 
     private boolean statusEmFila(StatusExecucao status) {
-        return status == StatusExecucao.CRIADA || status == StatusExecucao.DIAGNOSTICO_CONCLUIDO;
+        return status == StatusExecucao.CRIADA
+                || status == StatusExecucao.EM_DIAGNOSTICO
+                || status == StatusExecucao.EM_REPARO;
     }
 
     private String filaStatus(Execucao execucao) {

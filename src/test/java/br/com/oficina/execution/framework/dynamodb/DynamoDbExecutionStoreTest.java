@@ -189,11 +189,29 @@ class DynamoDbExecutionStoreTest {
 
         store.iniciarDiagnostico(execucao.execucaoId(), "corr-fila-store-001");
 
+        assertTrue(store.listarFilaExecucao(null).stream().anyMatch(item -> item.execucaoId().equals(execucao.execucaoId())));
+        assertTrue(store.execucaoItems().stream().anyMatch(item ->
+                item.pk().equals("EXECUCAO#" + execucao.execucaoId())
+                        && item.sk().equals("METADATA")
+                        && item.attributes().get("filaStatus").equals("EM_DIAGNOSTICO")
+                        && item.attributes().containsKey("prioridadeCriadoEm")));
+
+        store.concluirDiagnostico(execucao.execucaoId(), "Falha identificada", "corr-fila-store-002");
+
         assertTrue(store.listarFilaExecucao(null).stream().noneMatch(item -> item.execucaoId().equals(execucao.execucaoId())));
         assertTrue(store.execucaoItems().stream().anyMatch(item ->
                 item.pk().equals("EXECUCAO#" + execucao.execucaoId())
                         && item.sk().equals("METADATA")
                         && !item.attributes().containsKey("filaStatus")
                         && !item.attributes().containsKey("prioridadeCriadoEm")));
+
+        store.iniciarReparo(execucao.execucaoId(), "corr-fila-store-003");
+
+        assertTrue(store.listarFilaExecucao(null).stream().anyMatch(item -> item.execucaoId().equals(execucao.execucaoId())));
+        assertTrue(store.execucaoItems().stream().anyMatch(item ->
+                item.pk().equals("EXECUCAO#" + execucao.execucaoId())
+                        && item.sk().equals("METADATA")
+                        && item.attributes().get("filaStatus").equals("EM_REPARO")
+                        && item.attributes().containsKey("prioridadeCriadoEm")));
     }
 }
