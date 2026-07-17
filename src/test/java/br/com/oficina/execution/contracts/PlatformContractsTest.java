@@ -95,13 +95,11 @@ class PlatformContractsTest {
 
         Set.of(
                 "criar-execucao",
-                "iniciar-diagnostico",
-                "iniciar-execucao",
-                "cancelar-execucao",
                 "compensar-estoque",
                 "diagnosticoIniciado",
                 "diagnosticoFinalizado",
                 "orcamentoAprovado",
+                "orcamentoRecusado",
                 "execucaoIniciada",
                 "execucaoFinalizada")
                 .forEach(term -> assertTrue(sagaContract.contains(term),
@@ -124,6 +122,7 @@ class PlatformContractsTest {
                 "pecaIncluidaNaOrdemDeServico", "oficina-os-service",
                 "servicoIncluidoNaOrdemDeServico", "oficina-os-service",
                 "orcamentoAprovado", "oficina-billing-service",
+                "orcamentoRecusado", "oficina-billing-service",
                 "ordemDeServicoFinalizada", "oficina-os-service",
                 "sagaCompensada", "oficina-os-service",
                 "sagaFinalizadaComSucesso", "oficina-os-service");

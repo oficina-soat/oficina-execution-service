@@ -331,6 +331,16 @@ public class DynamoDbExecutionStore {
         };
     }
 
+    public Execucao retomarDiagnosticoAposRecusa(UUID ordemServicoId) {
+        var execucao = buscarExecucaoDaOrdemServico(ordemServicoId);
+        if (execucao.status() != StatusExecucao.DIAGNOSTICO_CONCLUIDO) {
+            return execucao;
+        }
+        execucao.retomarDiagnostico(agora());
+        salvarExecucao(execucao);
+        return execucao;
+    }
+
     public Execucao concluirReparo(UUID execucaoId, String observacoes, String correlationId) {
         var execucao = buscarExecucao(execucaoId);
         var statusAnterior = execucao.status();
@@ -538,6 +548,10 @@ public class DynamoDbExecutionStore {
 
     private void salvarSaldo(Estoque saldo) {
         put(toItem(saldo));
+    }
+
+    private void salvarExecucao(Execucao execucao) {
+        put(toItem(execucao));
     }
 
     private void salvarExecucaoEEvento(

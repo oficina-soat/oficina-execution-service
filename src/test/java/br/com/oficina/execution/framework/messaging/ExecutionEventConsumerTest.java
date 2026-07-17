@@ -13,6 +13,7 @@ import br.com.oficina.execution.framework.dynamodb.DynamoDbTableNames;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -106,12 +107,47 @@ class ExecutionEventConsumerTest {
                 UUID.randomUUID(),
                 "pecaIncluidaNaOrdemDeServico",
                 UUID.randomUUID(),
-                Map.of("pecaId", DynamoDbExecutionStore.SEED_PECA_ID))));
+                Map.of("peca", Map.of("pecaId", DynamoDbExecutionStore.SEED_PECA_ID)))));
         assertTrue(consumer.consumir(envelope(
                 UUID.randomUUID(),
                 "servicoIncluidoNaOrdemDeServico",
                 UUID.randomUUID(),
-                Map.of("servicoId", DynamoDbExecutionStore.SEED_SERVICO_ID))));
+                Map.of("servico", Map.of("servicoId", DynamoDbExecutionStore.SEED_SERVICO_ID)))));
+    }
+
+    @Test
+    void deveRetomarDiagnosticoAposRecusaDoOrcamento() {
+        var ordemServicoId = UUID.randomUUID();
+        var execucao = store.criarExecucaoSeAusente(ordemServicoId);
+        store.iniciarDiagnostico(execucao.execucaoId(), "correlation-diagnostico");
+        store.concluirDiagnostico(execucao.execucaoId(), "Diagnostico concluido", "correlation-diagnostico");
+
+        assertTrue(consumer.consumir(envelope(
+                UUID.randomUUID(),
+                "orcamentoRecusado",
+                ordemServicoId,
+                Map.of("ordemServicoId", ordemServicoId, "orcamentoId", UUID.randomUUID()))));
+
+        var retomada = store.buscarExecucaoDaOrdemServico(ordemServicoId);
+        assertEquals(StatusExecucao.EM_DIAGNOSTICO, retomada.status());
+        assertEquals(List.of(br.com.oficina.execution.core.entities.execucao.AcaoPermitidaExecucao.CONCLUIR_DIAGNOSTICO),
+                retomada.acoesPermitidas());
+    }
+
+    @Test
+    void deveManterEventoFalhoElegivelParaRetentativa() {
+        var eventId = UUID.randomUUID();
+        var eventoInvalido = envelope(
+                eventId,
+                "pecaIncluidaNaOrdemDeServico",
+                UUID.randomUUID(),
+                Map.of());
+
+        assertThrows(IllegalArgumentException.class, () -> consumer.consumir(eventoInvalido));
+        assertThrows(IllegalArgumentException.class, () -> consumer.consumir(eventoInvalido));
+        assertEquals(
+                br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus.FAILED_RETRYABLE,
+                store.buscarIdempotencia("event-consumer", eventId.toString()).orElseThrow().processingStatus());
     }
 
     @Test
