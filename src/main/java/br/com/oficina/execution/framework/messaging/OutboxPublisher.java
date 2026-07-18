@@ -12,6 +12,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
@@ -28,6 +29,8 @@ public class OutboxPublisher {
     private final int batchSize;
     private final int maxAttempts;
     private final long backoffBaseMs;
+    private final String claimOwner = UUID.randomUUID().toString();
+    private final long claimLeaseMs;
 
     public OutboxPublisher(
             DynamoDbExecutionStore store,
@@ -45,7 +48,8 @@ public class OutboxPublisher {
                 batchSize,
                 maxAttempts,
                 backoffBaseMs,
-                new OperationalMetrics(new SimpleMeterRegistry(), DomainMessagingRoutes.SERVICE_NAME));
+                new OperationalMetrics(new SimpleMeterRegistry(), DomainMessagingRoutes.SERVICE_NAME),
+                30000);
     }
 
     @Inject
@@ -57,7 +61,8 @@ public class OutboxPublisher {
             @ConfigProperty(name = "oficina.messaging.publisher.batch-size", defaultValue = "10") int batchSize,
             @ConfigProperty(name = "oficina.messaging.publisher.max-attempts", defaultValue = "5") int maxAttempts,
             @ConfigProperty(name = "oficina.messaging.publisher.backoff-base-ms", defaultValue = "1000") long backoffBaseMs,
-            OperationalMetrics metrics) {
+            OperationalMetrics metrics,
+            @ConfigProperty(name = "oficina.messaging.publisher.claim-lease-ms", defaultValue = "30000") long claimLeaseMs) {
         this.store = store;
         this.messagingClient = messagingClient;
         this.codec = codec;
@@ -66,6 +71,7 @@ public class OutboxPublisher {
         this.maxAttempts = maxAttempts;
         this.backoffBaseMs = backoffBaseMs;
         this.metrics = metrics;
+        this.claimLeaseMs = Math.max(1000, claimLeaseMs);
     }
 
     public List<OutboxEventRecord> publicarPendentes() {
@@ -74,12 +80,13 @@ public class OutboxPublisher {
             return List.of();
         }
         var publicados = new ArrayList<OutboxEventRecord>();
-        for (var event : store.listarOutboxPendenteParaPublicacao(batchSize)) {
+        var claimUntil = OffsetDateTime.now(ZoneOffset.UTC).plusNanos(claimLeaseMs * 1_000_000L);
+        for (var event : store.reivindicarOutboxPendente(batchSize, claimOwner, claimUntil)) {
             var startedAt = metrics.startOutboxAttempt(event.eventType(), event.topic());
             try {
                 publicar(event);
-                var published = store.marcarOutboxPublicado(event.eventId());
-                metrics.outboxPublished(event.eventType(), event.topic(), startedAt);
+                var published = store.marcarOutboxPublicado(event.eventId(), claimOwner);
+                metrics.outboxPublished(event.eventType(), event.topic(), startedAt, event.createdAt());
                 publicados.add(published);
             } catch (RuntimeException exception) {
                 var attempts = event.attempts() + 1;
@@ -88,7 +95,8 @@ public class OutboxPublisher {
                         event.eventId(),
                         rootMessage(exception),
                         nextAttempt(attempts),
-                        failed);
+                        failed,
+                        claimOwner);
                 metrics.outboxFailed(event.eventType(), event.topic(), failureReason(exception));
                 LOG.warnf(exception, "Falha ao publicar evento %s no topico %s", event.eventId(), event.topic());
             }

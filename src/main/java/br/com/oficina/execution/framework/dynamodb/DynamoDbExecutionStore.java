@@ -30,6 +30,7 @@ import org.jboss.logging.Logger;
 import org.jboss.logging.MDC;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
@@ -477,7 +478,41 @@ public class DynamoDbExecutionStore {
                 .toList();
     }
 
+    public List<OutboxEventRecord> reivindicarOutboxPendente(
+            int limit, String claimOwner, OffsetDateTime claimUntil) {
+        var claimed = new ArrayList<OutboxEventRecord>();
+        var now = agora();
+        for (var event : listarOutboxPendenteParaPublicacao(limit)) {
+            var item = toItem(event);
+            var claimedAttributes = new LinkedHashMap<>(item.attributes());
+            claimedAttributes.put("claimOwner", claimOwner);
+            claimedAttributes.put("claimUntil", claimUntil);
+            var claimedItem = new DynamoDbItem(
+                    item.tableName(), item.pk(), item.sk(), item.entityType(), claimedAttributes);
+            try {
+                metrics.persistence(DATABASE, resource(item.tableName()), "claim", () -> dynamoDbClient.putItem(
+                        PutItemRequest.builder()
+                                .tableName(item.tableName())
+                                .item(toAttributeMap(claimedItem))
+                                .conditionExpression("#status = :pending AND (attribute_not_exists(claimUntil) OR claimUntil <= :now)")
+                                .expressionAttributeNames(Map.of("#status", ATTR_STATUS))
+                                .expressionAttributeValues(Map.of(
+                                        ":pending", AttributeValue.fromS(OutboxStatus.PENDING.name()),
+                                        ":now", toAttributeValue(now)))
+                                .build()));
+                claimed.add(event);
+            } catch (ConditionalCheckFailedException _) {
+                // Outra replica possui um lease vigente.
+            }
+        }
+        return List.copyOf(claimed);
+    }
+
     public OutboxEventRecord marcarOutboxPublicado(UUID eventId) {
+        return marcarOutboxPublicado(eventId, null);
+    }
+
+    public OutboxEventRecord marcarOutboxPublicado(UUID eventId, String claimOwner) {
         var current = buscarOutbox(eventId);
         var now = agora();
         var updated = new OutboxEventRecord(
@@ -497,7 +532,7 @@ public class DynamoDbExecutionStore {
                 current.correlationId(),
                 current.createdAt(),
                 now);
-        put(toItem(updated));
+        putClaimed(toItem(updated), claimOwner);
         logEvent("outbox event published", updated, "PUBLISHED");
         return updated;
     }
@@ -507,6 +542,15 @@ public class DynamoDbExecutionStore {
             String lastError,
             OffsetDateTime nextAttemptAt,
             boolean failed) {
+        return marcarFalhaPublicacao(eventId, lastError, nextAttemptAt, failed, null);
+    }
+
+    public OutboxEventRecord marcarFalhaPublicacao(
+            UUID eventId,
+            String lastError,
+            OffsetDateTime nextAttemptAt,
+            boolean failed,
+            String claimOwner) {
         var current = buscarOutbox(eventId);
         var now = agora();
         var status = failed ? OutboxStatus.FAILED : OutboxStatus.PENDING;
@@ -527,7 +571,7 @@ public class DynamoDbExecutionStore {
                 current.correlationId(),
                 current.createdAt(),
                 now);
-        put(toItem(updated));
+        putClaimed(toItem(updated), claimOwner);
         logEvent("outbox event publication failed", updated, status.name());
         return updated;
     }
@@ -933,6 +977,20 @@ public class DynamoDbExecutionStore {
                 PutItemRequest.builder()
                         .tableName(item.tableName())
                         .item(toAttributeMap(item))
+                        .build()));
+    }
+
+    private void putClaimed(DynamoDbItem item, String claimOwner) {
+        if (claimOwner == null) {
+            put(item);
+            return;
+        }
+        metrics.persistence(DATABASE, resource(item.tableName()), "complete_claim", () -> dynamoDbClient.putItem(
+                PutItemRequest.builder()
+                        .tableName(item.tableName())
+                        .item(toAttributeMap(item))
+                        .conditionExpression("claimOwner = :owner")
+                        .expressionAttributeValues(Map.of(":owner", AttributeValue.fromS(claimOwner)))
                         .build()));
     }
 
