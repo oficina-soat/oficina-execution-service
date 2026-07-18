@@ -9,6 +9,8 @@ import br.com.oficina.execution.core.entities.estoque.TipoMovimentoEstoque;
 import br.com.oficina.execution.framework.dynamodb.IdempotencyRecord.ProcessingStatus;
 import java.util.Map;
 import java.util.UUID;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -146,6 +148,35 @@ class DynamoDbExecutionStoreTest {
                         && item.sk().equals("REQUEST")
                         && item.attributes().get("processingStatus").toString().equals("FAILED_FINAL")
                         && item.attributes().containsKey("correlationId")));
+    }
+
+    @Test
+    void deveCoordenarClaimDaOutboxEntreReplicasERecuperarLeaseExpirado() {
+        var event = store.registrarOutbox(
+                "diagnosticoIniciado",
+                "oficina.execution.diagnostico-iniciado",
+                "execucao-claim",
+                Map.of("execucaoId", "execucao-claim"),
+                "correlation-claim");
+        var now = OffsetDateTime.now(ZoneOffset.UTC);
+
+        var firstClaim = store.reivindicarOutboxPendente(10, "replica-a", now.plusMinutes(1));
+        var concurrentClaim = store.reivindicarOutboxPendente(10, "replica-b", now.plusMinutes(1));
+
+        assertTrue(firstClaim.stream().anyMatch(candidate -> candidate.eventId().equals(event.eventId())));
+        assertTrue(concurrentClaim.stream().noneMatch(candidate -> candidate.eventId().equals(event.eventId())));
+        assertThrows(RuntimeException.class, () -> store.marcarOutboxPublicado(event.eventId(), "replica-b"));
+
+        var expiredEvent = store.registrarOutbox(
+                "diagnosticoFinalizado",
+                "oficina.execution.diagnostico-finalizado",
+                "execucao-expired-claim",
+                Map.of("execucaoId", "execucao-expired-claim"),
+                "correlation-expired-claim");
+        store.reivindicarOutboxPendente(10, "replica-a", now.minusSeconds(1));
+        var recovered = store.reivindicarOutboxPendente(10, "replica-b", now.plusMinutes(1));
+        assertTrue(recovered.stream().anyMatch(candidate -> candidate.eventId().equals(expiredEvent.eventId())));
+        assertEquals("PUBLISHED", store.marcarOutboxPublicado(expiredEvent.eventId(), "replica-b").status().name());
     }
 
     @Test
