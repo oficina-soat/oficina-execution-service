@@ -244,6 +244,13 @@ Com o serviço em execução local na porta `8080`, a documentação gerada pelo
 - OpenAPI YAML: `http://localhost:8080/q/openapi`;
 - OpenAPI JSON: `http://localhost:8080/q/openapi?format=json`.
 
+No perfil de produção usado pelo `lab`, os endpoints técnicos recebem o nome
+canônico do serviço para permitir o roteamento sem colisões no API Gateway:
+
+- Swagger UI: `<LAB_API_BASE_URL>/q/swagger-ui/oficina-execution-service/`;
+- OpenAPI YAML: `<LAB_API_BASE_URL>/q/openapi/oficina-execution-service`;
+- OpenAPI JSON: `<LAB_API_BASE_URL>/q/openapi/oficina-execution-service?format=json`.
+
 O teste [PlatformContractsTest](src/test/java/br/com/oficina/execution/contracts/PlatformContractsTest.java) valida que a OpenAPI gerada em runtime mantém os caminhos e métodos definidos no contrato canônico.
 
 ## Contratos
