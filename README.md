@@ -73,6 +73,35 @@ flowchart LR
 
 O serviço possui ownership de catálogo técnico, estoque e execução. A integração com a Saga é assíncrona e idempotente; o estado global da Ordem de Serviço permanece sob responsabilidade do `oficina-os-service`.
 
+## Fluxo técnico
+
+```mermaid
+sequenceDiagram
+  participant OS as OS / Saga
+  participant BI as Billing
+  participant EX as Execution
+  actor M as Mecânico
+  OS-->>EX: ordemDeServicoCriada
+  M->>EX: inicia diagnóstico
+  EX-->>OS: diagnosticoIniciado
+  M->>EX: inclui peças e serviços
+  EX-->>OS: pecaIncluidaNaOrdemDeServico e servicoIncluidoNaOrdemDeServico
+  M->>EX: finaliza diagnóstico
+  EX-->>OS: diagnosticoFinalizado
+  alt orçamento aprovado
+    BI-->>EX: orcamentoAprovado
+    EX->>EX: baixa estoque idempotente
+    EX-->>OS: execucaoIniciada
+    M->>EX: conclui reparo
+    EX-->>OS: execucaoFinalizada
+  else orçamento recusado
+    BI-->>EX: orcamentoRecusado
+    EX->>EX: reabre diagnóstico
+  end
+```
+
+O Execution consome os eventos de criação da OS e decisão do orçamento necessários à projeção técnica. Produz eventos de diagnóstico, itens, estoque e execução pela Outbox DynamoDB. O roteamento completo está na [tabela canônica de mensageria](../oficina-platform/contracts/Contrato%20de%20T%C3%B3picos%20de%20Mensageria.md#tabela-can%C3%B4nica-de-roteamento), e a colaboração completa está na [visão transversal da plataforma](../oficina-platform/README.md#fluxos-operacionais).
+
 ## Persistência
 
 A persistência runtime usa `DynamoDbClient` síncrono com as tabelas definidas no [Padrão DynamoDB do oficina-execution-service](../oficina-platform/docs/infrastructure/dynamodb-execution-service.md). O store grava e lê catálogo, estoque, execuções, Outbox e idempotência no DynamoDB, mantendo os itens canônicos `PK`, `SK`, `entityType` e os atributos necessários aos GSIs documentados.
